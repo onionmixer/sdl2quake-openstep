@@ -99,19 +99,33 @@ maketex(GLuint name, GLenum format, int size, int mips, GLenum minf)
  * long wall.  Every arm above used 0..1, which is why they all passed while
  * the engine's own drawing did not.
  */
+/*
+ * `sz' is how big the triangle is on the screen, and it matters as much as
+ * uv does.  The trapezoid's anchor is an extrapolation, so what decides it
+ * is the GRADIENT -- texture units per pixel -- not the coordinate range on
+ * its own.  A wide triangle with uv 0..256 has a gentle gradient; a narrow
+ * one with uv 0..4 can have a far steeper one.  The first version of this
+ * varied only uv, which is why every arm passed.
+ */
 static void
-drawuv(float uv)
+drawuv2(float uv, float sz)
 {
     int i;
     for (i = 0; i < TRIS; i++) {
-        float o = (float)i * 0.01f;
+        float o = (float)i * 0.001f;
         glBegin(GL_TRIANGLES);
-          glTexCoord2f(0.0f, 0.0f); glVertex3f(-0.8f + o, -0.8f, -1.0f);
-          glTexCoord2f(uv,   0.0f); glVertex3f( 0.8f + o, -0.8f, -1.0f);
-          glTexCoord2f(uv*0.5f, uv); glVertex3f( 0.0f + o,  0.8f, -1.0f);
+          glTexCoord2f(0.0f, 0.0f);   glVertex3f(-sz + o, -sz, -1.0f);
+          glTexCoord2f(uv,   0.0f);   glVertex3f( sz + o, -sz, -1.0f);
+          glTexCoord2f(uv*0.5f, uv);  glVertex3f( 0.0f + o, sz, -1.0f);
         glEnd();
     }
     glFinish();
+}
+
+static void
+drawuv(float uv)
+{
+    drawuv2(uv, 0.8f);
 }
 
 static void
@@ -242,6 +256,15 @@ main(int argc, char **argv)
     baseline(); drawuv(16.0f);  verdict("uv 0..16", "HARDWARE");
     baseline(); drawuv(64.0f);  verdict("uv 0..64", "HARDWARE");
     baseline(); drawuv(256.0f); verdict("uv 0..256", "HARDWARE");
+
+    /*
+     * The same coordinate ranges on triangles a few pixels across.  If the
+     * anchor is an extrapolation, these are where it runs away.
+     */
+    baseline(); drawuv2(1.0f,   0.01f); verdict("uv 1  on 1% screen",   "HARDWARE");
+    baseline(); drawuv2(16.0f,  0.01f); verdict("uv 16 on 1% screen",   "HARDWARE");
+    baseline(); drawuv2(64.0f,  0.01f); verdict("uv 64 on 1% screen",   "HARDWARE");
+    baseline(); drawuv2(64.0f,  0.002f); verdict("uv 64 on 0.2% screen", "HARDWARE");
 
     printf("\n  texture residency: binding distinct 64x64 textures until"
            " one has no room\n");
