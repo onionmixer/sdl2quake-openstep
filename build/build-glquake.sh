@@ -44,7 +44,7 @@ test -d $OUT/bin || mkdir $OUT/bin
 # it because the name sounded like a portability fallback was a guess, and
 # the upstream list already said otherwise.
 CORE="cl_demo cl_input cl_main cl_parse cl_tent chase cmd common console
-crc cvar gl_draw gl_mesh gl_model gl_refrag gl_rlight gl_rmain gl_rmisc
+crc cvar gl_draw gl_mesh gl_model gl_refrag gl_rlight gl_rmain
 gl_rsurf gl_screen gl_test gl_warp host host_cmd keys menu mathlib
 net_dgrm net_loop net_main net_vcr net_bsd pr_cmds pr_edict
 pr_exec r_part sbar sv_main sv_phys sv_move sv_user zone view wad world
@@ -74,7 +74,7 @@ echo "platform:"
 rm -f $OBJ/cd_null.o
 cc -c $CFLAGS $SRC/cd_null.c -o $OBJ/cd_null.o
 echo "  ok    cd_null.c (upstream)"
-for f in sys_sdl snd_sdl net_udp in_sdl gl_vidsdl; do
+for f in sys_sdl snd_sdl net_udp in_sdl gl_vidsdl gl_rmisc; do
     rm -f $OBJ/$f.o
     cc -c $CFLAGS $PORT/$f.c -o $OBJ/$f.o
     echo "  ok    $f.c (port)"
@@ -87,5 +87,34 @@ cc -m486 -o $OUT/bin/glquake $OBJ/*.o \
     $SDLB/libSDL2.a $MGA/build/mesa/libGL_mga.a -lm \
     -framework AppKit -framework Foundation -framework SoundKit
 csh -f /tmp/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake
+#
+# The control.  Same engine, same backend, same data -- only the library
+# differs.  A picture that is wrong in both is ours; a picture that is wrong
+# only in the accelerated one belongs to the card's path.  Every demo pair in
+# this workspace exists for the same reason.
+#
+if [ -r "$MGA/build/mesa/libGL.a" ]; then
+    # OUTSIDE $OBJ on purpose: the list below is built from $OBJ/*.o, and an
+    # object left in that directory is picked up again by the glob -- which
+    # linked two copies of the video backend and every global in it twice.
+    rm -f /tmp/glq-plain-vid.o $OUT/bin/glquake_sw
+    cc -c $CFLAGS -DOSMGA_GLQUAKE_PLAIN $PORT/gl_vidsdl.c -o /tmp/glq-plain-vid.o
+    rm -f /tmp/glq-plain-objs
+    for o in $OBJ/*.o; do
+        if [ "$o" = "$OBJ/gl_vidsdl.o" ]; then
+            :
+        else
+            echo "$o" >> /tmp/glq-plain-objs
+        fi
+    done
+    cc -m486 -o $OUT/bin/glquake_sw `cat /tmp/glq-plain-objs` /tmp/glq-plain-vid.o \
+        $SDLB/libSDL2.a $MGA/build/mesa/libGL.a -lm \
+        -framework AppKit -framework Foundation -framework SoundKit
+    csh -f /tmp/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake_sw
+    echo "  control: $OUT/bin/glquake_sw (stock Mesa)"
+else
+    echo "  control SKIPPED: no stock libGL.a"
+fi
+
 echo ""
 echo "GLQUAKE_BUILD=pass $OUT/bin/glquake"

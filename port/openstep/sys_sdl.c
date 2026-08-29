@@ -413,6 +413,20 @@ int main (int c, char **v)
 	extern int recording;
 	static int frame;
 
+	/*
+	 * OPENSTEP: stdout unbuffered.
+	 *
+	 * Not a fix for anything -- a diagnostic that makes the log's last line
+	 * mean what it appears to mean.  With block buffering, two runs of the
+	 * same crash ended on different lines, because what survives is the last
+	 * FLUSH rather than the last thing printed.  Localising a fault from
+	 * that is localising from noise.
+	 *
+	 * Costs a write per line.  On a port whose failures are still being
+	 * found, that is worth paying.
+	 */
+	setbuf (stdout, (char *)0);
+
 	moncontrol(0);
 
 //	signal(SIGFPE, floating_point_exception_handler);

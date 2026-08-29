@@ -47,8 +47,10 @@
  * that names them, and it hands them to SDL2 rather than calling them:
  * SDL2 cannot name them itself, because libSDL2.a must keep linking against
  * a stock Mesa where they do not exist. */
+#ifndef OSMGA_GLQUAKE_PLAIN
 #include "OpenStepMGAMesaBuffer.h"
 #include "OpenStepMGAMesaHook.h"
+#endif
 
 #define BASEWIDTH  640
 #define BASEHEIGHT 480
@@ -109,6 +111,7 @@ void (*vid_menukeyfn)(int key) = NULL;
  * program's: SDL keeps the pointer rather than a copy, so a struct on the
  * stack would dangle by the first swap.
  */
+#ifndef OSMGA_GLQUAKE_PLAIN
 static const SDL_OpenStepGLPresent present_hooks = {
     SDL_OPENSTEP_GLPRESENT_ABI,
     sizeof(SDL_OpenStepGLPresent),
@@ -116,6 +119,7 @@ static const SDL_OpenStepGLPresent present_hooks = {
     OSMGAMesaBufferPresentMode,
     OSMGAMesaBufferPresentRect
 };
+#endif
 
 /*
  * The 8-bit palette, expanded two ways.
@@ -211,6 +215,7 @@ CheckMultiTextureExtensions (void)
  *
  * Printed as totals rather than rates; call it twice and subtract.
  */
+#ifndef OSMGA_GLQUAKE_PLAIN
 static void
 MGA_Stats_f (void)
 {
@@ -227,6 +232,8 @@ MGA_Stats_f (void)
                 OSMGAMesaHookTexAbsent (), OSMGAMesaHookTexPersp ());
     Con_Printf ("read back     : %lu copies\n", OSMGAMesaBufferCopies ());
 }
+
+#endif
 
 static void
 GL_Init (void)
@@ -254,6 +261,26 @@ GL_Init (void)
      * card draws them.  Distant textures shimmer without mip levels, and
      * that is the trade this build makes deliberately.
      */
+    /*
+     * THE FILTER THAT MATTERS IS THE UPLOAD'S, NOT THIS ONE.
+     *
+     * glTexParameterf here sets the filter on whatever texture happens to be
+     * bound now.  Every texture the engine uploads later gets gl_filter_min
+     * instead (gl_draw.c:1079), and that variable's default is
+     * GL_LINEAR_MIPMAP_NEAREST -- which this driver's state gate refuses, so
+     * every world surface would be drawn in software while looking correct
+     * and running at a crawl.  That is exactly what happened before this
+     * line existed.
+     *
+     * Set at VID_Init, before any texture is loaded, so nothing has to be
+     * re-uploaded.  `gl_texturemode' still changes it at the console; asking
+     * for a mipmap mode there gives up the acceleration, knowingly.
+     */
+    {
+        extern int gl_filter_min, gl_filter_max;
+        gl_filter_min = GL_LINEAR;
+        gl_filter_max = GL_LINEAR;
+    }
     glTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
@@ -263,9 +290,46 @@ GL_Init (void)
     glTexEnvf (GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
 }
 
+/*
+ * Keep the upload filter to something the card can draw.
+ *
+ * VID_Init runs BEFORE the configs, so any default set there is overwritten
+ * by whatever they say -- and LibreQuake's default.cfg says
+ * `gl_texturemode gl_nearest_mipmap_linear'.  The driver refuses all four
+ * mipmap filters, so that one line sends every world surface to software
+ * while the picture stays correct and the frame rate collapses.  Measured
+ * with gdb: the only geometry reaching the card was the sky.
+ *
+ * Checked once a frame because there is no other moment that is reliably
+ * after the configs and before the drawing.  It is two integer comparisons.
+ *
+ * SAID OUT LOUD, once.  Quietly overriding what someone typed is worse than
+ * being slow; this way the console explains why the setting did not stick.
+ */
+static void
+GL_KeepFilterDrawable (void)
+{
+    extern int gl_filter_min, gl_filter_max;
+    static qboolean told = false;
+
+    if (gl_filter_min == GL_LINEAR || gl_filter_min == GL_NEAREST)
+        return;
+
+    if (!told) {
+        Con_Printf ("gl_texturemode: this driver draws no mipmap filter, so\n"
+                    "                the world would be rendered in software.\n"
+                    "                Using GL_LINEAR instead.\n");
+        told = true;
+    }
+    gl_filter_min = GL_LINEAR;
+    if (gl_filter_max != GL_LINEAR && gl_filter_max != GL_NEAREST)
+        gl_filter_max = GL_LINEAR;
+}
+
 void
 GL_BeginRendering (int *x, int *y, int *width, int *height)
 {
+    GL_KeepFilterDrawable ();
     *x = 0;
     *y = 0;
     *width = scr_width;
@@ -343,8 +407,10 @@ VID_Init (unsigned char *palette)
      * that registers nothing gets the ordinary AppKit path and is correct,
      * only slower.
      */
+#ifndef OSMGA_GLQUAKE_PLAIN
     SDL_SetWindowData (sdl_window, SDL_OPENSTEP_GLPRESENT_KEY,
                        (void *)&present_hooks);
+#endif
 
     {
         int gotw = 0, goth = 0;
@@ -371,7 +437,9 @@ VID_Init (unsigned char *palette)
     vid.direct = 0;
 
     Cvar_RegisterVariable (&gl_ztrick);
+#ifndef OSMGA_GLQUAKE_PLAIN
     Cmd_AddCommand ("mgastats", MGA_Stats_f);
+#endif
 
     GL_Init ();
     VID_SetPalette (palette);
