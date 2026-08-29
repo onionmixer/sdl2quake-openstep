@@ -92,19 +92,32 @@ maketex(GLuint name, GLenum format, int size, int mips, GLenum minf)
     free(px);
 }
 
+/*
+ * The texture coordinate range is an argument because Quake's is not 0..1.
+ * A world surface tiles its texture across itself, so the s and t the engine
+ * emits run to whatever the surface is wide in texture repeats -- tens, on a
+ * long wall.  Every arm above used 0..1, which is why they all passed while
+ * the engine's own drawing did not.
+ */
 static void
-draw(void)
+drawuv(float uv)
 {
     int i;
     for (i = 0; i < TRIS; i++) {
         float o = (float)i * 0.01f;
         glBegin(GL_TRIANGLES);
           glTexCoord2f(0.0f, 0.0f); glVertex3f(-0.8f + o, -0.8f, -1.0f);
-          glTexCoord2f(1.0f, 0.0f); glVertex3f( 0.8f + o, -0.8f, -1.0f);
-          glTexCoord2f(0.5f, 1.0f); glVertex3f( 0.0f + o,  0.8f, -1.0f);
+          glTexCoord2f(uv,   0.0f); glVertex3f( 0.8f + o, -0.8f, -1.0f);
+          glTexCoord2f(uv*0.5f, uv); glVertex3f( 0.0f + o,  0.8f, -1.0f);
         glEnd();
     }
     glFinish();
+}
+
+static void
+draw(void)
+{
+    drawuv(1.0f);
 }
 
 int
@@ -183,10 +196,53 @@ main(int argc, char **argv)
     glShadeModel(GL_FLAT);
     baseline(); draw(); verdict("alias / GL_FLAT", "HARDWARE");
 
+    /*
+     * Arms the first pass did not test: the sizes the data actually uses,
+     * and the two-pass sequence in the order the engine performs it.  The
+     * world's base pass sets no texture environment of its own -- it
+     * inherits whatever the lightmap pass left -- so testing it in
+     * isolation was testing something the engine never does.
+     */
+    glDisable(GL_BLEND);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    maketex(tex[5], GL_RGB, 128, 0, GL_LINEAR);
+    baseline(); draw(); verdict("world 128x128", "HARDWARE");
+    maketex(tex[6], GL_RGB, 256, 0, GL_LINEAR);
+    baseline(); draw(); verdict("world 256x256", "HARDWARE");
+    maketex(tex[7], GL_RGB, 512, 0, GL_LINEAR);
+    baseline(); draw(); verdict("world 512x512", "HARDWARE");
+
+    /* the engine's order: base pass, then the blended lightmap, then the
+     * next surface's base pass with MODULATE still current */
+    maketex(tex[8], GL_RGB, 128, 0, GL_LINEAR);
+    baseline(); draw(); verdict("pass 1 base", "HARDWARE");
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
+    maketex(tex[9], GL_RGBA, 128, 0, GL_LINEAR);
+    baseline(); draw(); verdict("pass 2 lightmap", "HARDWARE");
+    glDisable(GL_BLEND);
+    maketex(tex[10], GL_RGB, 128, 0, GL_LINEAR);
+    baseline(); draw(); verdict("pass 1 again (MODULATE)", "HARDWARE");
+
     /* 6. How many textures can be resident at once.  The allocator keeps a
      *    fixed number of blocks whatever their size, and a level references
      *    more distinct textures than that -- 27 at the least, 65 at the
      *    most, counted from the BSPs.  This finds where it stops. */
+    /*
+     * The coordinate range, which nothing above varied.  Verdict 13 from the
+     * kernel is E_TEXCOORD, and it is what revoked acceleration in the
+     * engine, so this is the arm that should reproduce it.
+     */
+    glDisable(GL_BLEND);
+    glTexEnvi(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_REPLACE);
+    maketex(tex[10], GL_RGB, 64, 0, GL_LINEAR);
+    baseline(); drawuv(1.0f);   verdict("uv 0..1", "HARDWARE");
+    baseline(); drawuv(4.0f);   verdict("uv 0..4", "HARDWARE");
+    baseline(); drawuv(16.0f);  verdict("uv 0..16", "HARDWARE");
+    baseline(); drawuv(64.0f);  verdict("uv 0..64", "HARDWARE");
+    baseline(); drawuv(256.0f); verdict("uv 0..256", "HARDWARE");
+
     printf("\n  texture residency: binding distinct 64x64 textures until"
            " one has no room\n");
     {
@@ -195,7 +251,7 @@ main(int argc, char **argv)
          * textures, up to 24 lightmap sheets, the fixed four, and an
          * allowance for model skins.  A test that stopped at 59 would not
          * reach the number this change was made for. */
-        for (i = 5; i < 200; i++) {
+        for (i = 11; i < 200; i++) {
             unsigned long before = OSMGAMesaHookTexAbsent();
             maketex(tex[i], GL_RGB, 64, 0, GL_LINEAR);
             draw();

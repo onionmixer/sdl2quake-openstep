@@ -442,6 +442,24 @@ VID_Init (unsigned char *palette)
 #endif
 
     GL_Init ();
+
+    /*
+     * The mesh cache needs somewhere to live, and I had left this out.
+     *
+     * All three upstream GL backends make this directory right after
+     * GL_Init -- gl_vidlinuxglx.c:897, gl_vidlinux.c and gl_vidnt.c all do
+     * the same two lines.  Without it, gl_mesh.c's fopen(..., "wb") returns
+     * NULL, the .ms2 files are never written, and every run rebuilds every
+     * alias model's strips from scratch.  The failure is silent: the engine
+     * checks the pointer and simply carries on.
+     */
+    {
+        char gldir[MAX_OSPATH];
+
+        sprintf (gldir, "%s/glquake", com_gamedir);
+        Sys_mkdir (gldir);
+    }
+
     VID_SetPalette (palette);
     SDL_ShowCursor (0);
     IN_SetWindow (sdl_window);      /* in_sdl.c, shared with the software build */
