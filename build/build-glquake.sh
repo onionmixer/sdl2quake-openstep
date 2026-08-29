@@ -16,13 +16,30 @@
 # path Quake shipped on every non-x86 machine.
 set -e
 ROOT=${1:-/ndrv/openstep-quake}
-SDLB=${2:-/usr/local/nxbuild/SDL20/build/SDL-2.32.10-openstep}
+SDLB=${2:-/me/SDL20/build/SDL-2.32.10-openstep}
 MGA=${3:-/ndrv/openstep-matrox-remade}
 OUT=${4:-/usr/local/nxbuild}
 SRC=$ROOT/upstream/sdlquake
 PORT=$ROOT/port/openstep
 OBJ=/tmp/glquake-obj
-CFLAGS="-m486 -O -DGLQUAKE -D__OPENSTEP__ -Dstricmp=strcasecmp -I$SRC \
+#
+# A debug build, when one is wanted.  gdb is on the target and it is the
+# only way to see what the back end hands the kernel from inside the
+# process that hands it; the kernel side cannot be debugged at all, which
+# is why it counts instead.  Separate objects and a separate binary so the
+# optimised one is never quietly replaced by a slower one.
+#
+#   DEBUG=1 sh build-glquake.sh
+#
+if [ "${DEBUG:-0}" = "1" ]; then
+    OPT="-g"
+    OBJ=/tmp/glquake-obj-g
+    BINSUFFIX=_g
+else
+    OPT="-O"
+    BINSUFFIX=""
+fi
+CFLAGS="-m486 $OPT -DGLQUAKE -D__OPENSTEP__ -Dstricmp=strcasecmp -I$SRC \
  -I$SDLB/include -I$SDLB/src/video/openstep -I$MGA/mesa -I$MGA/hw3d \
  -I$MGA/build/mesa/include"
 
@@ -82,11 +99,11 @@ done
 
 echo ""
 echo "link:"
-rm -f $OUT/bin/glquake
-cc -m486 -o $OUT/bin/glquake $OBJ/*.o \
+rm -f $OUT/bin/glquake$BINSUFFIX
+cc -m486 $OPT -o $OUT/bin/glquake$BINSUFFIX $OBJ/*.o \
     $SDLB/libSDL2.a $MGA/build/mesa/libGL_mga.a -lm \
     -framework AppKit -framework Foundation -framework SoundKit
-csh -f /usr/local/nxbuild/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake
+csh -f /me/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake$BINSUFFIX
 #
 # The control.  Same engine, same backend, same data -- only the library
 # differs.  A picture that is wrong in both is ours; a picture that is wrong
@@ -97,7 +114,7 @@ if [ -r "$MGA/build/mesa/libGL.a" ]; then
     # OUTSIDE $OBJ on purpose: the list below is built from $OBJ/*.o, and an
     # object left in that directory is picked up again by the glob -- which
     # linked two copies of the video backend and every global in it twice.
-    rm -f /tmp/glq-plain-vid.o $OUT/bin/glquake_sw
+    rm -f /tmp/glq-plain-vid.o $OUT/bin/glquake_sw$BINSUFFIX
     cc -c $CFLAGS -DOSMGA_GLQUAKE_PLAIN $PORT/gl_vidsdl.c -o /tmp/glq-plain-vid.o
     rm -f /tmp/glq-plain-objs
     for o in $OBJ/*.o; do
@@ -107,14 +124,14 @@ if [ -r "$MGA/build/mesa/libGL.a" ]; then
             echo "$o" >> /tmp/glq-plain-objs
         fi
     done
-    cc -m486 -o $OUT/bin/glquake_sw `cat /tmp/glq-plain-objs` /tmp/glq-plain-vid.o \
+    cc -m486 $OPT -o $OUT/bin/glquake_sw$BINSUFFIX `cat /tmp/glq-plain-objs` /tmp/glq-plain-vid.o \
         $SDLB/libSDL2.a $MGA/build/mesa/libGL.a -lm \
         -framework AppKit -framework Foundation -framework SoundKit
-    csh -f /usr/local/nxbuild/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake_sw
+    csh -f /me/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake_sw
     echo "  control: $OUT/bin/glquake_sw (stock Mesa)"
 else
     echo "  control SKIPPED: no stock libGL.a"
 fi
 
 echo ""
-echo "GLQUAKE_BUILD=pass $OUT/bin/glquake"
+echo "GLQUAKE_BUILD=pass $OUT/bin/glquake$BINSUFFIX"

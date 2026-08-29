@@ -71,6 +71,7 @@ def measure(data, name, out):
     surfedges = list(struct.unpack_from("<%di" % (slen // 4), data, sofs))
 
     worst = 0.0
+    spans = []
     faces_over = [0] * 12          # how many faces reach past 1,2,4,8,...
     total = 0
     for i in range(flen // 20):
@@ -86,6 +87,8 @@ def measure(data, name, out):
         if tw == 0 or th == 0:
             continue
         reach = 0.0
+        slo = tlo = 1e30
+        shi = thi = -1e30
         for k in range(numedges):
             se = surfedges[firstedge + k]
             vi = edges[abs(se)][0 if se >= 0 else 1]
@@ -93,14 +96,22 @@ def measure(data, name, out):
             s = (v[0] * t[0] + v[1] * t[1] + v[2] * t[2] + t[3]) / tw
             tt = (v[0] * t[4] + v[1] * t[5] + v[2] * t[6] + t[7]) / th
             reach = max(reach, abs(s), abs(tt))
+            slo = min(slo, s); shi = max(shi, s)
+            tlo = min(tlo, tt); thi = max(thi, tt)
         total += 1
         worst = max(worst, reach)
         for b in range(12):
             if reach > (1 << b):
                 faces_over[b] += 1
+        # And the SPAN, which is what survives re-basing: subtracting a whole
+        # number of repeats moves a face's coordinates without changing how
+        # far apart they are, so the span is what still has to fit.
+        span = max(shi - slo, thi - tlo)
+        spans.append(span)
     if not total:
         return
-    out.append((name, total, worst, faces_over))
+    spans.sort()
+    out.append((name, total, worst, faces_over, spans))
 
 
 def main(argv):
@@ -124,11 +135,13 @@ def main(argv):
                                    "faces past 1/2/4/8/16/32/64/128"))
     grand = 0
     gover = [0] * 12
-    for name, total, worst, over in out[:12]:
+    allspans = []
+    for name, total, worst, over, sp in out[:12]:
         print("%-28s %6d %10.2f   %s" %
               (name, total, worst, "/".join(str(over[b]) for b in range(8))))
-    for name, total, worst, over in out:
+    for name, total, worst, over, sp in out:
         grand += total
+        allspans.extend(sp)
         for b in range(12):
             gover[b] += over[b]
     print()
@@ -137,6 +150,19 @@ def main(argv):
         if gover[b]:
             print("  past %5d repeats: %7d faces  %6.2f%%"
                   % (1 << b, gover[b], 100.0 * gover[b] / grand))
+    allspans.sort()
+    n = len(allspans)
+    print()
+    print("SPAN within a face -- what re-basing cannot remove:")
+    for q in (0.5, 0.9, 0.99, 0.999, 1.0):
+        i = min(n - 1, int(q * n))
+        print("  %6.1f%%  %8.3f repeats" % (100.0 * q, allspans[i]))
+    over8 = sum(1 for x in allspans if x > 8.0)
+    over1 = sum(1 for x in allspans if x > 1.0)
+    print("  faces whose span exceeds 1 repeat: %d (%.2f%%)"
+          % (over1, 100.0 * over1 / n))
+    print("  faces whose span exceeds 8 repeats: %d (%.2f%%)"
+          % (over8, 100.0 * over8 / n))
     return 0
 
 
