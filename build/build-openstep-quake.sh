@@ -18,8 +18,8 @@
 # assembly would buy back a few percent of a frame.
 set -e
 ROOT=${1:-/ndrv/openstep-quake}
-SDLB=${2:-/tmp/SDL20/build/SDL-2.32.10-openstep}
-MESA=${3:-/tmp/SDL20/mesa/Mesa-3.4.2}
+SDLB=${2:-/usr/local/nxbuild/SDL20/build/SDL-2.32.10-openstep}
+MESA=${3:-/usr/local/nxbuild/SDL20/mesa/Mesa-3.4.2}
 OUT=${4:-/usr/local/nxbuild}
 SRC=$ROOT/upstream/sdlquake
 PORT=$ROOT/port/openstep
@@ -64,6 +64,6 @@ rm -f $OUT/bin/squake
 cc -m486 -o $OUT/bin/squake $OBJ/*.o \
     $SDLB/libSDL2.a $MESA/lib/libGL.a -lm \
     -framework AppKit -framework Foundation -framework SoundKit
-csh -f /tmp/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/squake
+csh -f /usr/local/nxbuild/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/squake
 echo ""
 echo "QUAKE_BUILD=pass $OUT/bin/squake"

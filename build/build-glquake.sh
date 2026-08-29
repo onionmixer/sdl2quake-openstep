@@ -16,7 +16,7 @@
 # path Quake shipped on every non-x86 machine.
 set -e
 ROOT=${1:-/ndrv/openstep-quake}
-SDLB=${2:-/tmp/SDL20/build/SDL-2.32.10-openstep}
+SDLB=${2:-/usr/local/nxbuild/SDL20/build/SDL-2.32.10-openstep}
 MGA=${3:-/ndrv/openstep-matrox-remade}
 OUT=${4:-/usr/local/nxbuild}
 SRC=$ROOT/upstream/sdlquake
@@ -86,7 +86,7 @@ rm -f $OUT/bin/glquake
 cc -m486 -o $OUT/bin/glquake $OBJ/*.o \
     $SDLB/libSDL2.a $MGA/build/mesa/libGL_mga.a -lm \
     -framework AppKit -framework Foundation -framework SoundKit
-csh -f /tmp/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake
+csh -f /usr/local/nxbuild/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake
 #
 # The control.  Same engine, same backend, same data -- only the library
 # differs.  A picture that is wrong in both is ours; a picture that is wrong
@@ -110,7 +110,7 @@ if [ -r "$MGA/build/mesa/libGL.a" ]; then
     cc -m486 -o $OUT/bin/glquake_sw `cat /tmp/glq-plain-objs` /tmp/glq-plain-vid.o \
         $SDLB/libSDL2.a $MGA/build/mesa/libGL.a -lm \
         -framework AppKit -framework Foundation -framework SoundKit
-    csh -f /tmp/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake_sw
+    csh -f /usr/local/nxbuild/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake_sw
     echo "  control: $OUT/bin/glquake_sw (stock Mesa)"
 else
     echo "  control SKIPPED: no stock libGL.a"
