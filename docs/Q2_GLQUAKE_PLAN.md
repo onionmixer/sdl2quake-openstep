@@ -452,3 +452,63 @@ N=384   배열 3,072 바이트   레벨 로딩 1회의 할당기 비용 0.60 ms
 
 다음은 `Q2-2`, `gl_vidsdl.c` 다.  이제 그 파일을 쓰는 것이 값이 있다는 근거가
 있다.
+
+---
+
+## 10. Q2-2 결과 (2026-08-30) — GLQuake 가 링크된다
+
+```
+GLQUAKE_CORE_COMPILE ok=45 fail=0
+platform: cd_null · sys_sdl · snd_sdl · net_udp · in_sdl · gl_vidsdl
+GLQUAKE_BUILD=pass /usr/local/nxbuild/bin/glquake
+  2,890,880 바이트 · Mach-O executable (for architecture i486)
+```
+
+새 파일은 `port/openstep/gl_vidsdl.c` -- 이 트리에 GLX·3dfx·NT 판은 있고 SDL
+판이 없어서 같은 계약을 SDL2 로 구현했다.  `GL_EndRendering` 이
+`SDL_GL_SwapWindow` 를 부르고, `VID_Init` 이 드라이버의 present 함수 셋을
+`SDL_SetWindowData` 로 등록한다.  그 등록이 프레임을 VRAM 에서 화면으로
+직접 보내는 전부다.
+
+### 10.1 입력 코드를 공용으로 뺐다
+
+Quake 의 관습은 비디오 파일마다 자기 입력 코드를 갖는 것이고, 그래서 상류의
+`vid_sdl.c` · `gl_vidlinux.c` · `gl_vidlinuxglx.c` · `vid_win.c` 에 같은 키
+표가 네 번 있다.  이 포트는 **한 트리에서 두 엔진을 만들므로** 복사하면
+고침이 한쪽에만 닿는다.  `port/openstep/in_sdl.c` 로 한 번만 두고, 각
+비디오 백엔드가 `IN_SetWindow()` 로 자기 창을 넘긴다.
+
+### 10.2 막힌 것 넷, 셋은 내 실수였다
+
+```
+nonintel 을 목록에 넣었다     상류의 GLQUAKE_OBJS 에 없는데 "C 수학 대체"
+                              일 것이라고 짐작했다.  그 파일은 r_local.h 와
+                              d_local.h -- 소프트웨어 렌더러의 헤더 -- 를
+                              포함하고, GL 빌드에는 espan_t 가 없다.
+                              목록이 이미 답을 말하고 있었다
+glquake.h 를 직접 포함했다    quakedef.h:263 이 이미 포함한다.  그 헤더에
+                              include guard 가 없어 모든 타입이 재정의됐다
+WARP_WIDTH 가 없다            소프트웨어 렌더러의 헤더에 있다.  GL 백엔드는
+                              저마다 스스로 정의한다 (GLX 판도 3dfx 판도)
+전역 여섯 개                  texture_mode · texture_extension_number ·
+                              gldepthmin/max · isPermedia · gl_ztrick.
+                              엔진이 glquake.h 로 선언하고 비디오 백엔드가
+                              정의하기를 기대한다
+```
+
+### 10.3 빌드 스크립트가 실패를 숨겼다
+
+첫 실패에서 스크립트가 **아무것도 출력하지 않고** 종료했다.  `set -e` 아래에서
+`cc ... 2> /tmp/glq-err` 가 실패하면 그 자리에서 끝나고, 이유는 읽히지 않은
+파일에 남는다.  기계를 두 번 왕복하고서야 알았다.  실패를 보이게 고쳤다.
+
+### 10.4 우연한 확인 하나
+
+`texture_mode` 를 `GL_LINEAR` 로 둔 것은 드라이버가 밉맵 필터를 거절하기
+때문인데, GLX 백엔드도 같은 값을 쓴다 -- 그 파일에는 다섯 개의 밉맵
+대안이 주석 처리된 채 그 줄 위에 놓여 있다.  이유는 다르지만 결론은 같다.
+
+### 10.5 다음
+
+`Q2-3` -- 맵을 하나 열고, 패스별로 하드웨어와 소프트웨어를 따로 센다.
+**"떴다" 는 증거가 아니다**: 소프트웨어로 다 그려도 화면은 맞아 보인다.

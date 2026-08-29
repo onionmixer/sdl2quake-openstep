@@ -41,14 +41,18 @@ if [ -s /tmp/quake-core-fails ]; then
     exit 1
 fi
 
-# The platform four.  cd_null comes from upstream unchanged -- SDL2 has no
+# The platform files.  in_sdl.c is shared with the GL build -- Quake's habit
+# is a key table per video backend, and this tree builds two engines, so the
+# input lives once and each backend hands it the window it made.
+#
+# cd_null comes from upstream unchanged -- SDL2 has no
 # CD audio API at all, so there is nothing to port, only something to drop.
 echo ""
 echo "platform:"
 rm -f $OBJ/cd_null.o
 cc -c $CFLAGS $SRC/cd_null.c -o $OBJ/cd_null.o
 echo "  ok    cd_null.c (upstream)"
-for f in sys_sdl snd_sdl vid_sdl net_udp; do
+for f in sys_sdl snd_sdl vid_sdl net_udp in_sdl; do
     rm -f $OBJ/$f.o
     cc -c $CFLAGS $PORT/$f.c -o $OBJ/$f.o
     echo "  ok    $f.c (port)"
