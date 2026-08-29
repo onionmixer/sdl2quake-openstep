@@ -1,0 +1,22 @@
+This its the paches made over the original quake source, 
+a port of ID Software's popular Quake 3-D shooter game
+
+None of documentation of that work are over the network or internet.
+
+This directory offers the original pacht of the firts SDL rasterizer port.
+
+Quake SDL:
+    http://www.libsdl.org/projects/quake/
+
+Author:
+    slouken@devolution.com    (http://www.devolution.com/~slouken/SDL/) (now non-existing)
+
+Source:
+   sdlquake-1.0.9.tar.gz original, and this from original q1source.zip + q1source.txt
+
+SDL port patch:
+   SDLquake.pat
+
+Requires:
+   SDL 1.0
+

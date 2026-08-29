@@ -1,0 +1,4 @@
+# Build output goes to the target's own filesystem, never here.
+build-output/
+release-assets/
+*.o
