@@ -46,6 +46,7 @@ baseline(void)
 static void
 verdict(const char *what, const char *expected)
 {
+    unsigned long warp   = OSMGAMesaHookWarp()       - b_warp;
     unsigned long hard   = OSMGAMesaHookHardState()  - b_hard;
     unsigned long soft   = OSMGAMesaHookSoftState()  - b_soft;
     unsigned long drawn  = OSMGAMesaHookDrawn()      - b_drawn;
@@ -61,9 +62,17 @@ verdict(const char *what, const char *expected)
     else if (soft > 0UL && drawn == 0UL) got = "software";
     else                                 got = "mixed/none";
 
-    printf("  %-22s %-9s  hard %2lu soft %2lu | drawn %3lu sw %3lu"
+    /*
+     * warp is printed now.  It was collected and thrown away, so the report
+     * could not say WHICH layer drew -- and the two layers do not share a
+     * coordinate contract: WARP hands the card per-vertex floats the kernel
+     * only checks for finiteness, while the trapezoid path hands it anchors
+     * held to a range.  Nine arms of this test were read as evidence about
+     * the trapezoid anchor while WARP was on the whole time.
+     */
+    printf("  %-22s %-9s  warp %3lu hard %2lu soft %2lu | drawn %3lu sw %3lu"
            " absent %2lu persp %2lu   %s\n",
-           what, got, hard, soft, drawn, sw, absent, persp,
+           what, got, warp, hard, soft, drawn, sw, absent, persp,
            strcmp(got, expected) == 0 ? "" : "<-- not what was expected");
 }
 
