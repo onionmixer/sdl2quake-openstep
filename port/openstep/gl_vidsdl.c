@@ -326,10 +326,11 @@ MGA_Stats_Dump (void (*out)(char *fmt, ...))
         if (any) out ("\n");
     }
     {
-        unsigned long wb[4];
+        unsigned long wb[6];
         OSMGAMesaHookWhyBatch (wb);
         out ("flush         : bracket %lu, key %lu, full %lu, other %lu,"
              " clip %lu\n", fl[0], fl[1], fl[2], fl[3], wb[0]);
+        out ("  key was       : texture %lu, gradients %lu\n", wb[4], wb[5]);
         out ("warp declined : state %lu, vertex %lu, forced %lu\n",
              wb[1], wb[2], wb[3]);
         {
