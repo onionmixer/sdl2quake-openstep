@@ -54,6 +54,7 @@
 #include "OpenStepMGAMesaHook.h"
 #include "OpenStepMGAMesaTexture.h"
 #include "OpenStepMGAMesaTriangle.h"
+#include "OpenStepMGAMesaWarp.h"
 #endif
 
 #define BASEWIDTH  640
@@ -324,8 +325,29 @@ MGA_Stats_Dump (void (*out)(char *fmt, ...))
         }
         if (any) out ("\n");
     }
-    out ("flush         : bracket %lu, key %lu, full %lu, other %lu\n",
-         fl[0], fl[1], fl[2], fl[3]);
+    {
+        unsigned long wb[4];
+        OSMGAMesaHookWhyBatch (wb);
+        out ("flush         : bracket %lu, key %lu, full %lu, other %lu,"
+             " clip %lu\n", fl[0], fl[1], fl[2], fl[3], wb[0]);
+        out ("warp declined : state %lu, vertex %lu, forced %lu\n",
+             wb[1], wb[2], wb[3]);
+        {
+            static const char *wn[OSMGA_WARP_NO_COUNT] = {
+                "null", "xbits", "xrange", "ybits", "yrange", "zbits",
+                "zrange", "qsign", "rhwbits", "rhwrange", "ubits", "vbits" };
+            unsigned long wc[OSMGA_WARP_NO_COUNT];
+            OSMGAMesaWarpNoCounts (wc);
+            any = 0;
+            for (i = 0; i < OSMGA_WARP_NO_COUNT; i++)
+                if (wc[i]) {
+                    if (!any) out ("warp vertex   :");
+                    out (" %s %lu", wn[i], wc[i]);
+                    any = 1;
+                }
+            if (any) out ("\n");
+        }
+    }
     out ("submit        : %lu calls, %lu us, %lu dwords, spins %lu (max %lu)\n",
          sb[0], sb[1], sb[2], sb[3], sb[4]);
     out ("texture       : uploads %lu, refused %lu, evicted %lu\n",
