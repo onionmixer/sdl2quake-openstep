@@ -42,6 +42,18 @@ byte    *VGA_pagebase;
 static SDL_Window  *sdl_window  = NULL;
 static SDL_Surface *sdl_screen  = NULL;   // the window's own surface
 static SDL_Surface *sdl_indexed = NULL;   // what Quake draws into
+/*
+ * Set when the palette changes, cleared by the next VID_Update.
+ *
+ * SDL 1.2 kept the screen itself in 8 bits, so SDL_SetColors recoloured
+ * every pixel already on it.  Here the window is true colour and the 8-bit
+ * surface is converted into it one dirty rectangle at a time -- so after a
+ * palette shift (a hit, the underwater tint) the rectangles Quake did not
+ * redraw that frame, the status bar among them, would keep the OLD colours
+ * until something redrew them.  One whole-surface conversion after each
+ * shift is what the 8-bit screen used to do for free.
+ */
+static int sdl_palette_changed = 0;
 
 // No support for option menus
 void (*vid_menudrawfn)(void) = NULL;
@@ -59,10 +71,12 @@ void    VID_SetPalette (unsigned char *palette)
         colors[i].b = *palette++;
         colors[i].a = 255;              // SDL2's SDL_Color has alpha
     }
-    if (sdl_indexed)
+    if (sdl_indexed) {
         // SDL_SetColors -> SDL_SetPaletteColors, and it takes the palette
         // rather than the surface.
         SDL_SetPaletteColors(sdl_indexed->format->palette, colors, 0, 256);
+        sdl_palette_changed = 1;
+    }
 }
 
 void    VID_ShiftPalette (unsigned char *palette)
@@ -195,14 +209,21 @@ void    VID_Update (vrect_t *rects)
     // on purpose: this port's backend repaints the entire view regardless of
     // what it is told, so asking it for less buys nothing (measured), while
     // converting less does.
-    for (rect = rects; rect; rect = rect->pnext)
-    {
-        SDL_Rect r;
-        r.x = rect->x;
-        r.y = rect->y;
-        r.w = rect->width;
-        r.h = rect->height;
-        SDL_BlitSurface(sdl_indexed, &r, sdl_screen, &r);
+    if (sdl_palette_changed) {
+        // Every pixel, once: the colours under the rectangles Quake did not
+        // redraw this frame have changed too.
+        SDL_BlitSurface(sdl_indexed, NULL, sdl_screen, NULL);
+        sdl_palette_changed = 0;
+    } else {
+        for (rect = rects; rect; rect = rect->pnext)
+        {
+            SDL_Rect r;
+            r.x = rect->x;
+            r.y = rect->y;
+            r.w = rect->width;
+            r.h = rect->height;
+            SDL_BlitSurface(sdl_indexed, &r, sdl_screen, &r);
+        }
     }
     SDL_UpdateWindowSurface(sdl_window);
 }

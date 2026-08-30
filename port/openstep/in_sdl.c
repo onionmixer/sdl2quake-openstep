@@ -44,6 +44,7 @@ void Sys_SendKeyEvents(void)
     SDL_Event event;
     int sym, state;
     int modstate;
+    int warped = 0;
 
     while (SDL_PollEvent(&event))
     {
@@ -145,23 +146,53 @@ void Sys_SendKeyEvents(void)
                 break;
 
             case SDL_MOUSEMOTION:
-                if ( (event.motion.x != (vid.width/2)) ||
-                     (event.motion.y != (vid.height/2)) ) {
-                    mouse_x = event.motion.xrel*10;
-                    mouse_y = event.motion.yrel*10;
-                    if ( (event.motion.x < ((vid.width/2)-(vid.width/4))) ||
-                         (event.motion.x > ((vid.width/2)+(vid.width/4))) ||
-                         (event.motion.y < ((vid.height/2)-(vid.height/4))) ||
-                         (event.motion.y > ((vid.height/2)+(vid.height/4))) ) {
+                if (!mouse_avail)
+                    break;
+                /*
+                 * ACCUMULATED, where the original assigned.
+                 *
+                 * This function drains the queue once a frame, and the
+                 * original kept only the LAST motion event's delta -- every
+                 * earlier one in the same frame was thrown away.  AppKit
+                 * delivers a mouseMoved for every step the pointer takes and
+                 * a frame here takes long enough to collect dozens, so a
+                 * whole sweep of the hand became one small step: the mouse
+                 * looked dead, and the slower the frame, the deader.
+                 *
+                 * No test on the position before adding.  The original
+                 * skipped an event that landed exactly on the centre, to
+                 * ignore its own warp; but SDL2 resets its reference point
+                 * when it warps, so the warp's synthetic event carries a
+                 * zero delta and adds nothing -- while a REAL move that ends
+                 * on the centre carries a real delta the old test threw away.
+                 */
+                mouse_x += event.motion.xrel*10;
+                mouse_y += event.motion.yrel*10;
+                /*
+                 * Warp back to the centre once the pointer has strayed past a
+                 * quarter of the window, measured in the WINDOW's pixels --
+                 * event coordinates are the window's, and in the software
+                 * build vid.width is the render size, which -fullscreen makes
+                 * a different number.  At most once per drain: a slow frame
+                 * can queue many events past the threshold, and each warp is
+                 * a Window Server round trip that the next event undoes.
+                 */
+                if (!warped) {
+                    int ww = 0, wh = 0;
+
+                    SDL_GetWindowSize(in_window, &ww, &wh);
+                    if (ww > 0 && wh > 0 &&
+                        (event.motion.x < ww/2 - ww/4 ||
+                         event.motion.x > ww/2 + ww/4 ||
+                         event.motion.y < wh/2 - wh/4 ||
+                         event.motion.y > wh/2 + wh/4)) {
                         /* SDL_WarpMouse -> SDL_WarpMouseInWindow: SDL2 warps
                          * within a named window rather than the screen.
-                         *
-                         * SDL_SetRelativeMouseMode would be the modern way
-                         * and would avoid the warp entirely, but whether it
-                         * works on this port is unproven, so the faithful
-                         * translation stays until it is measured. */
-                        SDL_WarpMouseInWindow(in_window,
-                                              vid.width/2, vid.height/2);
+                         * SDL_SetRelativeMouseMode would remove the warp
+                         * entirely, but this backend has no native relative
+                         * mode and would fall back to warping anyway. */
+                        SDL_WarpMouseInWindow(in_window, ww/2, wh/2);
+                        warped = 1;
                     }
                 }
                 break;

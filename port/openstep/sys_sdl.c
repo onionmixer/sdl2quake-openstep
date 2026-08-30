@@ -476,7 +476,23 @@ int main (int c, char **v)
 		Sys_Error ("Could not allocate %d bytes for the heap "
 			   "-- try a smaller -heapsize", parms.memsize);
 	parms.basedir = basedir;
-	parms.cachedir = cachedir;
+	/*
+	 * NO CACHE DIRECTORY.
+	 *
+	 * The Linux original set this to /tmp, where Quake copies every file it
+	 * opens and then reads the COPY (common.c:1440-1455).  Here that is all
+	 * cost and one real hazard: /tmp is emptied at every boot, so the copies
+	 * are remade constantly -- and a run that ends while a copy is in
+	 * progress leaves a SHORT file that the next run reads as though it were
+	 * whole.  A zero-length glquake/v_shot.ms2 in that cache is what a core
+	 * dump was traced to: GL_MakeAliasModelDisplayLists read numcommands and
+	 * numorder out of an empty file and GL_DrawAliasFrame then walked a
+	 * display list that was not there.
+	 *
+	 * The data is on a local disk already.  Copying it to another local
+	 * directory buys nothing.
+	 */
+	parms.cachedir = "";
 
 	COM_InitArgv(c, v);
 	parms.argc = com_argc;

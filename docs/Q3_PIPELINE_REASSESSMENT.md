@@ -198,3 +198,73 @@ codex 가 새로 찾은 것을 전부 소스에서 확인했다.
 ### 보류 (커널·별건)
 좌표 정책 상한 확장(하드웨어 검증 필요), 깊이만 지우기, 밉맵, 멀티텍스처,
 WARP 기본화(화면 비교 뒤).
+
+## 6. H0·H2 구현과 코드 교차검토 (gpt-5.6-sol)
+
+### 구현
+- **H0**: 게이트가 거절한 상태에서 그려지는 삼각형을 세는 래퍼(`osmgaMesaGatedTriangle`),
+  마지막 거절의 지점, 게이트의 **어느 줄이** 거절했는지(`__LINE__`)와 횟수,
+  `mgastats` 확장 + N 프레임마다 stderr 덤프 + SIGTERM → 정상 종료.
+- **H2**: `osmgaMesaSubmitBatch` 가 ioctl 전에 커널과 같은 검증기를 돌려, 삼각형을
+  지목하는 판정이면 커널을 부르지 않고 그 삼각형만 소프트웨어로 재생(기존 narrowing
+  경로 재사용). 로컬 거절은 revoke run 에 가산하지 않는다.
+
+### 측정 (60초, WARP=0)
+- **revoke 0** — H2 의 구조적 목표 달성. 이전엔 첫 월드 프레임에서 항상 revoke.
+- 그러나 첫 월드 프레임이 45초 안에 끝나지 않는다. gdb 표본: `Draw_Character →
+  osmgaMesaMirror → OSMGAMesaBufferMirror` — 콘솔 글자(quad 하나)마다 640×480 전체를
+  VRAM→RAM 으로 복사. `hookDrawn` 정지, `gated` 증가 → 맵 로드 뒤 게이트가 소프트웨어로
+  돌아섰고, 그 상태에서 브래킷마다 전체 미러가 돈다.
+
+### 판정표
+
+| codex 주장 | 검증 | 판정 |
+|---|---|---|
+| prefix 가 커널에서 거절되면 `res` 가 덮여 같은 거절을 두 번 세고, 로컬 거절이 커널 거절로 둔갑한다 | `Hook.c` 1840/1859 확인 | ✅ **채택. 제 변경 전부터 있던 이중 계수.** 지목 판정을 `named` 에 따로 보관 |
+| 열린 창 범위는 삼각형 단위 판정을 바꾸지 않는다; 커널은 stride/containment 를 검증기 전에 따로 본다 | `.m:6693-6707` | ✅ 확인 |
+| 검증기는 `const` 배치에 부작용 없음, 출력은 매 호출 초기화 | `HW3D.c:635-647` | ✅ 확인 |
+| 로컬 `E_TEXCOORD` 가 히스토그램·site 어디에도 안 남는다 | 코드 | ✅ 채택. 로컬 히스토그램·last 추가 |
+| `OSMGA_MESA_VERDICTS 24` 는 판정 24(`E_ALPHACROSS`)를 못 담는다 | `HW3D.h:131` | ✅ 채택. 32 로 |
+| 게이트 이유가 리터럴 줄번호라 편집하면 틀어짐; 텍스처 게이트는 안팎 두 번 기록 | 코드 | ✅ 채택. `__LINE__`, 바깥 호출 지점 제외 |
+| 래퍼는 단일 컨텍스트에서 안전; 다중 컨텍스트에서는 `savedTriangle` 전역 하나라 조용히 버릴 수 있다 | 코드 | ⚖️ 사실. GLQuake 는 단일 컨텍스트. 일반 계약 결함으로 기록만 |
+| 검증 비용이 무시할 수준이 아닐 수 있다(텍스처 프리미티브당 행 순회 2회) | 문서 인용 | ⏭️ 측정으로 답한다(H0 덤프의 submit 시간) |
+| 브래킷마다 전체 미러: RenderStart 의 `osmgaMesaSoil` 이 무조건 dirty, `bufPresent` 가 꺼져 있으면 매 브래킷 복사 — 우발 버그가 아니라 보수적 전달 모델의 비용이나 GLQuake 에는 명백한 병목 | `Hook.c` Soil/Mirror 확인 | ✅ 확인. **다음 질문은 왜 맵 로드 뒤 `bufPresent` 가 꺼지는가** (SDL 이 stamp 를 해제하는 조건) |
+| `sig_atomic_t`, 죽은 `mga_stats_next`, 환경값 단위 불명확, warp0.sh 가 STATS_EVERY 를 안 넣음 | 코드 | ✅ 채택, 전부 수정 |
+| 테스트가 `-lm_4` 를 안 넣는다 | — | ⏭️ 의도. H1 은 H2 확인 뒤 별도로 |
+
+### 다음 (실기 복귀 후, 60초 한 번)
+게이트가 *어느 줄에서* 거절하는지(`gate refused` 줄)와 `bufPresent` 가 꺼진 이유를
+같은 실행에서 읽는다.
+
+## 7. 실기 없이 진행한 것 (실기 다운 중)
+
+- **H1 적용**: 포트의 `isPermedia = true`. 이 빌드에서 그 변수를 읽는 곳은
+  `gl_rsurf.c:1616` 하나(라이트맵 기본 RGBA)뿐임을 전수 grep 으로 확인. `-lm_1` 로
+  되돌릴 수 있다. 실기 확인 대기.
+- **present 모드 계측**: `OSMGAMesaBufferPresentMode` 의 on/off 전환 횟수와
+  프레젠트 ioctl 의 거절 판정 히스토그램을 `mgastats` 에 추가. 맵 로드 뒤
+  `bufPresent` 가 꺼지는 경로는 코드상 셋뿐이다 — (a) 포커스 상실/창 크기·컨텍스트
+  변경, (b) stamp 가 `E_BUSY`/`E_DST` 로 거절 → 그 프레임만 release, 다음 swap 에서
+  재arm, (c) `surface_origin()==0`. (b)면 거절 한 번마다 **다음 프레임 전체가 브래킷당
+  전체 미러**로 그려진다. 60초 실행 한 번이 셋 중 어느 것인지 답한다.
+- **SDL 버그 발견(미수정)**: `gl_stamp_barred` 가 서면 `StampArm` 이 release 없이
+  FALSE 를 돌려주므로 present 모드가 켜진 채 남고, AppKit 경로는 갱신되지 않은
+  배열을 그린다. SDL 재빌드가 필요하므로 별도 항목으로 미룬다.
+
+## 8. SDL1 → SDL2 대응 감사 (실기 다운 중, 소스만으로)
+
+업스트림 SDL 1.2 호출 27종을 포트의 대응과 대조. 올바른 것: 8bpp 화면 → INDEX8
+서피스+블릿, `SetColors` → `SetPaletteColors`, `UpdateRects` → 더티 변환+전체
+프레젠트, `WarpMouse` → `WarpMouseInWindow`, 오디오 API 동일, CD → null, GL 깊이
+16비트.
+
+부족한 것과 조치:
+1. **팔레트 변경 뒤 더티 사각형만 재변환** → 상태바 등이 이전 색으로 남음.
+   `VID_SetPalette` 가 플래그를 세우고 다음 `VID_Update` 가 한 번 전체 블릿. (적용)
+2. `SDL_GL_DEPTH_SIZE 16` 을 명시. (적용)
+3. `D_EndDirectRect` 가 비어 로딩 디스크 아이콘이 프레임 사이에 안 보임. (기록)
+4. SDL2 키 반복이 기본 켜짐(업스트림은 꺼짐). 게임 중은 `Key_Event` 가 거름. (기록)
+5. 포커스 상실 시 키 상태 미해제(업스트림 동일). (기록)
+6. 마우스: 프레임당 마지막 delta 만 반영하던 결함 → 누적으로 수정, codex 재검토
+   반영(중앙 가드 제거, 실제 창 크기 기준 warp, 펌프당 1회, `mouse_avail` 가드).
+   `PSsetmouse` 의 물리 이동과 커서 숨김 상태의 `mouseMoved` 수신은 실기 확인 필요.

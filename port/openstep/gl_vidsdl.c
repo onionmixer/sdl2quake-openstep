@@ -34,6 +34,8 @@
  * size; SDL2's backend releases its stamp on a resize and does not rebind.
  * Rather than pretend otherwise, the window is not resizable.
  */
+#include <signal.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -50,6 +52,8 @@
 #ifndef OSMGA_GLQUAKE_PLAIN
 #include "OpenStepMGAMesaBuffer.h"
 #include "OpenStepMGAMesaHook.h"
+#include "OpenStepMGAMesaTexture.h"
+#include "OpenStepMGAMesaTriangle.h"
 #endif
 
 #define BASEWIDTH  640
@@ -88,7 +92,23 @@ cvar_t gl_ztrick = {"gl_ztrick", "1"};
  */
 int   texture_extension_number = 1;
 float gldepthmin, gldepthmax;
-qboolean isPermedia = false;
+/*
+ * TRUE, and it is the lightmap format that this decides -- nothing else.
+ * In the files this build compiles, gl_rsurf.c reads it in exactly one
+ * place: to make the lightmap atlases GL_RGBA instead of GL_LUMINANCE.
+ * (The name is from the Permedia card, whose driver could not blend a
+ * luminance texture either.)
+ *
+ * The Matrox hook accepts RGB and RGBA textures and nothing with fewer
+ * channels, so a luminance lightmap sends the SECOND PASS OF EVERY LIT
+ * SURFACE to Mesa's software rasteriser -- drawing into video memory,
+ * with a blend that reads it back, one span at a time -- however good the
+ * first pass was.  With RGBA the atlas stores 255-light in alpha, black
+ * in colour, and the ordinary source-alpha blend darkens the same amount;
+ * that is the -lm_4 path GLQuake has always had.  -lm_1 on the command
+ * line still selects luminance, since the parameters are read after this.
+ */
+qboolean isPermedia = true;
 
 /*
  * GL_LINEAR, and the GLX backend chooses the same -- its file has the five
@@ -216,21 +236,169 @@ CheckMultiTextureExtensions (void)
  * Printed as totals rather than rates; call it twice and subtract.
  */
 #ifndef OSMGA_GLQUAKE_PLAIN
+/*
+ * Everything the back end counts, through a printf-shaped sink so that the
+ * console command and the stderr dump print the same lines.
+ *
+ * The lines are arranged as a PARTITION of the triangles the hook saw:
+ * drawn on the card, or one of five ways to software -- the state gate
+ * refused the state (gated), the vertex had no usable w or texture q
+ * (persp), the texture could not be made resident (absent), the trapezoid
+ * builder could not express it (unsupported), or the kernel refused the
+ * batch and the triangle was replayed (replayed).  "to Mesa" is the sum of
+ * the last four, counted where they are handed over; gated is counted
+ * separately because under a refused state the hook never sees the
+ * hand-over at all.
+ */
+static void
+MGA_Stats_Dump (void (*out)(char *fmt, ...))
+{
+    unsigned long fl[4], sb[6];
+    int i, any;
+
+    OSMGAMesaHookFlushCounts (fl);
+    OSMGAMesaHookSubmitStats (sb);
+
+    out ("surface       : %s\n",
+         OSMGAMesaBufferOrigin () ? "the engine's" : "the caller's");
+    out ("drawn         : %lu   (warp %lu, trapezoid %lu)\n",
+         OSMGAMesaHookDrawn (), OSMGAMesaHookWarp (),
+         OSMGAMesaHookDrawn () - OSMGAMesaHookWarp ());
+    out ("gated         : %lu   (state changes: hard %lu soft %lu)\n",
+         OSMGAMesaHookGated (),
+         OSMGAMesaHookHardState (), OSMGAMesaHookSoftState ());
+    out ("to Mesa       : %lu   = persp %lu + absent %lu + unsupported %lu"
+         " + replayed %lu\n",
+         OSMGAMesaHookSoftware (), OSMGAMesaHookTexPersp (),
+         OSMGAMesaHookTexAbsent (), OSMGAMesaHookUnsupported (),
+         OSMGAMesaHookReplayed ());
+    out ("kernel        : batches %lu, declined %lu, narrowed %lu,"
+         " prevalidated %lu\n",
+         OSMGAMesaHookBatches (), OSMGAMesaHookDeclined (),
+         OSMGAMesaHookNarrowed (), OSMGAMesaHookPrevalidated ());
+    any = 0;
+    for (i = 0; i < OSMGA_MESA_VERDICTS; i++)
+        if (OSMGAMesaHookVerdictCount (i)) {
+            if (!any) out ("verdicts      :");
+            out (" %d=%lu", i, OSMGAMesaHookVerdictCount (i));
+            any = 1;
+        }
+    if (any) out ("   (last %lu site %lu)\n",
+                  OSMGAMesaHookLastRefusal ()->verdict,
+                  OSMGAMesaHookLastRefusalSite ());
+    any = 0;
+    for (i = 0; i < OSMGA_MESA_VERDICTS; i++)
+        if (OSMGAMesaHookLocalVerdictCount (i)) {
+            if (!any) out ("local verdicts:");
+            out (" %d=%lu", i, OSMGAMesaHookLocalVerdictCount (i));
+            any = 1;
+        }
+    if (any) out ("   (last %lu site %lu)\n",
+                  OSMGAMesaHookLocalLastVerdict (), OSMGAMesaHookLocalLastSite ());
+    {
+        unsigned long gl[OSMGA_MESA_GATE_WHY], gc[OSMGA_MESA_GATE_WHY];
+        OSMGAMesaHookGateWhy (gl, gc);
+        any = 0;
+        for (i = 0; i < OSMGA_MESA_GATE_WHY && gl[i]; i++) {
+            if (!any) out ("gate refused  :");
+            out (" Hook.c:%lu x%lu", gl[i], gc[i]);
+            any = 1;
+        }
+        if (any) out ("\n");
+    }
+    {
+        unsigned long rb[7];
+        OSMGAMesaRebaseStats (rb);
+        out ("rebase        : seen %lu, moved %lu, no whole K %lu, q!=1 %lu,"
+             " repeatU %lu, over %lu (worst %lu repeats)\n",
+             rb[0], rb[1], rb[2], rb[3], rb[4], rb[5], rb[6]);
+    }
+    {
+        unsigned long bl[OSMGA_MESA_BUILD_WHY], bc[OSMGA_MESA_BUILD_WHY];
+        OSMGAMesaBuildWhy (bl, bc);
+        any = 0;
+        for (i = 0; i < OSMGA_MESA_BUILD_WHY && bl[i]; i++) {
+            if (!any) out ("builder refused:");
+            out (" Triangle.c:%lu x%lu", bl[i], bc[i]);
+            any = 1;
+        }
+        if (any) out ("\n");
+    }
+    out ("flush         : bracket %lu, key %lu, full %lu, other %lu\n",
+         fl[0], fl[1], fl[2], fl[3]);
+    out ("submit        : %lu calls, %lu us, %lu dwords, spins %lu (max %lu)\n",
+         sb[0], sb[1], sb[2], sb[3], sb[4]);
+    out ("texture       : uploads %lu, refused %lu, evicted %lu\n",
+         OSMGAMesaTexUploads (), OSMGAMesaTexRefused (), OSMGAMesaTexEvicted ());
+    out ("read back     : %lu copies\n", OSMGAMesaBufferCopies ());
+    out ("present mode  : on %lu, off %lu;  refused busy %lu dst %lu"
+         " src %lu geom %lu latch %lu mode %lu\n",
+         OSMGAMesaBufferPresentOnCount (), OSMGAMesaBufferPresentOffCount (),
+         OSMGAMesaBufferPresentRefused (5), OSMGAMesaBufferPresentRefused (3),
+         OSMGAMesaBufferPresentRefused (2), OSMGAMesaBufferPresentRefused (4),
+         OSMGAMesaBufferPresentRefused (6), OSMGAMesaBufferPresentRefused (7));
+}
+
 static void
 MGA_Stats_f (void)
 {
-    Con_Printf ("surface       : %s\n",
-                OSMGAMesaBufferOrigin () ? "the engine's" : "the caller's");
-    Con_Printf ("drawn         : %lu   (warp %lu, trapezoid %lu)\n",
-                OSMGAMesaHookDrawn (), OSMGAMesaHookWarp (),
-                OSMGAMesaHookDrawn () - OSMGAMesaHookWarp ());
-    Con_Printf ("state hard    : %lu   soft %lu\n",
-                OSMGAMesaHookHardState (), OSMGAMesaHookSoftState ());
-    Con_Printf ("to Mesa       : %lu   declined %lu\n",
-                OSMGAMesaHookSoftware (), OSMGAMesaHookDeclined ());
-    Con_Printf ("texture       : no room %lu, not affine %lu\n",
-                OSMGAMesaHookTexAbsent (), OSMGAMesaHookTexPersp ());
-    Con_Printf ("read back     : %lu copies\n", OSMGAMesaBufferCopies ());
+    MGA_Stats_Dump (Con_Printf);
+}
+
+/*
+ * The same to stderr every OSMGA_STATS_EVERY frames.  Each dump carries the frame count so the counters can be read
+ * per frame, which is the only way two runs of different length compare.
+ * The final dump is made at shutdown whatever the clock says.
+ */
+static void
+MGA_Stats_Err (char *fmt, ...)
+{
+    va_list ap;
+    va_start (ap, fmt);
+    vfprintf (stderr, fmt, ap);
+    va_end (ap);
+}
+
+static unsigned long mga_stats_every = 0;
+static unsigned long mga_frames = 0;
+static volatile sig_atomic_t mga_quit_asked = 0;
+static unsigned long mga_quit_frames = 0;
+
+/*
+ * A harness that ends a run does it with SIGTERM, and Quake has no handler
+ * for it -- the process just stops, and the final dump with it.  So the
+ * signal only raises a flag, and the frame loop turns the flag into the
+ * ordinary quit, which runs Host_Shutdown and so VID_Shutdown, where the
+ * final dump is.  Nothing is done inside the handler itself.
+ */
+static void
+MGA_OnTerm (int sig)
+{
+    (void)sig;
+    mga_quit_asked = 1;
+}
+
+static void
+MGA_Stats_Tick (int final)
+{
+    double now;
+
+    if (mga_stats_every < 1)
+        return;
+    now = Sys_FloatTime ();
+    /*
+     * Every N FRAMES, not every N seconds.  A frame here can take minutes
+     * once acceleration is gone, and a clock-driven tick then fires far
+     * too rarely to catch anything; and a run cut short by a harness has
+     * no last frame to dump on.  Frames are what the counters are about
+     * in any case.  The first frame always dumps.
+     */
+    if (!final && mga_frames != 1 &&
+        (mga_frames % mga_stats_every) != 0)
+        return;
+    fprintf (stderr, "==== mgastats %s t=%.1f frames=%lu\n",
+             final ? "final" : "tick", now, mga_frames);
+    MGA_Stats_Dump (MGA_Stats_Err);
 }
 
 #endif
@@ -321,15 +489,82 @@ GL_KeepFilterDrawable (void)
                     "                Using GL_LINEAR instead.\n");
         told = true;
     }
-    gl_filter_min = GL_LINEAR;
+    /*
+     * Through the engine's own command, not by assigning the two globals.
+     *
+     * The globals only decide the filter of textures uploaded LATER.  The
+     * command (Draw_TextureMode_f) also walks every mipmapped texture
+     * object already created and re-sets its filters, which is what a
+     * repair has to do: LibreQuake's default.cfg runs
+     * "gl_texturemode gl_nearest_mipmap_linear" at startup, and anything
+     * uploaded under that mode kept a minification filter the driver
+     * refuses -- so those textures were drawn in software, by Mesa's
+     * slowest textured path at that (it takes the lambda route whenever
+     * min and mag filters differ), for the life of the process.
+     */
+    Cmd_ExecuteString ("gl_texturemode GL_LINEAR", src_command);
     if (gl_filter_max != GL_LINEAR && gl_filter_max != GL_NEAREST)
         gl_filter_max = GL_LINEAR;
+}
+
+/*
+ * How many texture objects carry a filter the driver refuses, counted when
+ * a level has just been loaded -- the moment its textures exist and nothing
+ * has been drawn with them yet.  Printed to stderr so a harness sees it.
+ */
+static void
+GL_FilterAudit (void)
+{
+    static struct model_s *audited = NULL;
+    extern int texture_extension_number;
+    GLint was = 0, mn = 0, mg = 0;
+    int id, off = 0, total = 0;
+
+    if (cl.worldmodel == audited)
+        return;
+    audited = cl.worldmodel;
+    glGetIntegerv (GL_TEXTURE_BINDING_2D, &was);
+    for (id = 1; id < texture_extension_number; id++) {
+        if (!glIsTexture ((GLuint)id))
+            continue;
+        glBindTexture (GL_TEXTURE_2D, (GLuint)id);
+        glGetTexParameteriv (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &mn);
+        glGetTexParameteriv (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, &mg);
+        total++;
+        if ((mn != GL_NEAREST && mn != GL_LINEAR) ||
+            (mg != GL_NEAREST && mg != GL_LINEAR))
+            off++;
+    }
+    glBindTexture (GL_TEXTURE_2D, (GLuint)was);
+    fprintf (stderr, "==== filter audit: %d texture objects, %d with a filter"
+             " the driver refuses\n", total, off);
 }
 
 void
 GL_BeginRendering (int *x, int *y, int *width, int *height)
 {
+    /*
+     * THE AUDIO THREAD IS HELD OFF FOR THE FRAME.
+     *
+     * S_PaintChannels runs in SDL's audio callback (snd_sdl.c:55) and
+     * calls S_LoadSound (snd_mix.c:287), which calls Cache_Alloc
+     * (snd_mem.c:139), which calls Cache_Move (zone.c:617) -- memcpy'ing
+     * cache blocks to new addresses.  The renderer holds pointers into
+     * those blocks for the length of a frame: R_DrawAliasModel takes
+     * paliashdr from Mod_Extradata and walks it through R_SetupAliasFrame
+     * and GL_DrawAliasFrame.  A core dump caught exactly that -- a view
+     * model whose header had poseverts 0 and a commands offset pointing
+     * outside the block -- and the frames here are long enough to make it
+     * likely rather than rare.
+     *
+     * Quake's zone and cache are not thread-safe and cannot be made so
+     * from the port, so the callback is held off while the frame runs.
+     * The cost is that a frame longer than the audio buffer is a gap in
+     * the sound; the alternative is a renderer reading freed memory.
+     */
+    SDL_LockAudio ();
     GL_KeepFilterDrawable ();
+    GL_FilterAudit ();
     *x = 0;
     *y = 0;
     *width = scr_width;
@@ -349,11 +584,33 @@ GL_EndRendering (void)
      */
     glFlush ();
     SDL_GL_SwapWindow (sdl_window);
+    SDL_UnlockAudio ();      /* see GL_BeginRendering */
+#ifndef OSMGA_GLQUAKE_PLAIN
+    mga_frames++;
+    MGA_Stats_Tick (0);
+    /*
+     * A run that ends itself.  OSMGA_QUIT_AFTER_FRAMES names a frame count
+     * and the process quits through Host_Shutdown when it is reached --
+     * the only way out that leaves the driver, the surface and the console
+     * as they should be.  A harness must never end a run from outside:
+     * a signal that lands while the process is inside the driver has
+     * been followed by a frozen machine twice.
+     */
+    if (mga_quit_frames && mga_frames >= mga_quit_frames)
+        mga_quit_asked = 1;
+    if (OSMGAMesaHookDeadlineHit ())
+        mga_quit_asked = 1;
+    if (mga_quit_asked)
+        Sys_Quit ();
+#endif
 }
 
 void
 VID_Shutdown (void)
 {
+#ifndef OSMGA_GLQUAKE_PLAIN
+    MGA_Stats_Tick (1);
+#endif
     if (sdl_window)
         SDL_SetWindowData (sdl_window, SDL_OPENSTEP_GLPRESENT_KEY, NULL);
     if (sdl_context) { SDL_GL_DeleteContext (sdl_context); sdl_context = NULL; }
@@ -389,6 +646,15 @@ VID_Init (unsigned char *palette)
      * at one size and SDL2's stamp is released on a resize without being
      * rebound, so a resizable window would quietly stop being accelerated.
      */
+    /*
+     * Sixteen bits of depth, said out loud.  The driver accelerates only a
+     * context whose depth buffer is exactly sixteen bits -- it shares one
+     * 16-bit depth surface in video memory -- and that is what this
+     * backend's OSMesa gives by default today.  Asking for it explicitly
+     * keeps the two from drifting apart in silence: if the default ever
+     * changes, the request still names what the driver needs.
+     */
+    SDL_GL_SetAttribute (SDL_GL_DEPTH_SIZE, 16);
     sdl_window = SDL_CreateWindow ("glquake",
                                    SDL_WINDOWPOS_CENTERED,
                                    SDL_WINDOWPOS_CENTERED,
@@ -439,6 +705,18 @@ VID_Init (unsigned char *palette)
     Cvar_RegisterVariable (&gl_ztrick);
 #ifndef OSMGA_GLQUAKE_PLAIN
     Cmd_AddCommand ("mgastats", MGA_Stats_f);
+    {
+        const char *e = getenv ("OSMGA_STATS_EVERY");
+        if (e && atol (e) > 0)
+            mga_stats_every = (unsigned long)atol (e);
+        e = getenv ("OSMGA_QUIT_AFTER_FRAMES");
+        if (e && atol (e) > 0)
+            mga_quit_frames = (unsigned long)atol (e);
+        /* Always: a harness ends a run with SIGTERM, and a run that quits
+         * through Host_Shutdown leaves the console and the driver tidy
+         * whether or not it was counting. */
+        signal (SIGTERM, MGA_OnTerm);
+    }
 #endif
 
     GL_Init ();
