@@ -180,7 +180,8 @@ void    VID_Init (unsigned char *palette)
             + vid.width * vid.height * sizeof (*d_pzbuffer);
     D_InitCaches (cache, cachesize);
 
-    SDL_ShowCursor(0);
+    /* The cursor is the input code's: IN_SetWindow hides or shows it
+     * with the grab state, and -nomouse keeps it visible. */
     IN_SetWindow(sdl_window);
 }
 

@@ -404,6 +404,14 @@ static void moncontrol(int x)
 {
 }
 
+static volatile int sys_term_asked;
+
+static void sys_term_handler (int sig)
+{
+	(void)sig;
+	sys_term_asked = 1;
+}
+
 int main (int c, char **v)
 {
 
@@ -431,6 +439,15 @@ int main (int c, char **v)
 
 //	signal(SIGFPE, floating_point_exception_handler);
 	signal(SIGFPE, SIG_IGN);
+	/*
+	 * A SIGTERM must reach Host_Shutdown: IN_Shutdown puts the mouse
+	 * acceleration table back.  The handler only sets a flag -- the
+	 * frame loop quits -- because nothing async-safe can talk to the
+	 * event system.  glquake installs its own handler later (VID_Init)
+	 * and overrides this one; squake had none and died restoring
+	 * nothing.
+	 */
+	signal(SIGTERM, sys_term_handler);
 
 	/*
 	 * OPENSTEP: the heap is a command-line argument again, and its default
@@ -507,6 +524,9 @@ int main (int c, char **v)
     oldtime = Sys_FloatTime () - 0.1;
     while (1)
     {
+        if (sys_term_asked)
+            Sys_Quit ();
+
 // find time spent rendering last frame
         newtime = Sys_FloatTime ();
         time = newtime - oldtime;

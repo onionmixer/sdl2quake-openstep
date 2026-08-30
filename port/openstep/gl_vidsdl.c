@@ -776,7 +776,8 @@ VID_Init (unsigned char *palette)
     }
 
     VID_SetPalette (palette);
-    SDL_ShowCursor (0);
+    /* The cursor is the input code's: IN_SetWindow hides or shows it
+     * with the grab state, and -nomouse keeps it visible. */
     IN_SetWindow (sdl_window);      /* in_sdl.c, shared with the software build */
 
     vid.recalc_refdef = 1;

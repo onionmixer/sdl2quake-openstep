@@ -14,9 +14,23 @@
  * what is new is that it has one home.
  */
 #include <stdio.h>
+#include <string.h>
+#include <drivers/event_status_driver.h>   /* NXSet/GetMouseScaling */
 
 #include "SDL.h"
 #include "quakedef.h"
+
+/*
+ * PSWait, declared by hand: the pswrap-generated wrappers have plain C
+ * linkage, and this is a C file.  Why it is here at all: PSsetmouse is
+ * BUFFERED -- the probe measured it landing at the next DPS round trip,
+ * which was our own position query, so every pump read a pointer that
+ * had just been yanked back to the centre and the hand's whole frame of
+ * movement was erased (18/18 samples at distance zero).  Flushing right
+ * after the warp lands it NOW; the same probe then carried the full
+ * movement in 18/18 samples.  docs/Q4_GRAB_SOUND_PLAN.md section 9.
+ */
+extern void PSWait (void);
 
 static SDL_Window *in_window;
 
@@ -24,13 +38,150 @@ static qboolean mouse_avail;
 static float    mouse_x, mouse_y;
 static int      mouse_oldbuttonstate;
 
+/*
+ * THE GRAB.  AppKit delivers mouseMoved only while the pointer is inside
+ * the key view; dragged events arrive from anywhere.  So an ungrabbed
+ * pointer that leaves the window goes silent, which is why the view only
+ * turned while a button was held.  Grabbed play hides the cursor and
+ * recentres the pointer once per event pump; ungrabbed play gives the OS
+ * cursor back and feeds the game no mouse at all.  Shift+Ctrl+G toggles,
+ * and the window title says so (docs/Q4_GRAB_SOUND_PLAN.md).
+ */
+static int      in_grabbed = 1;
+
+/*
+ * THE ACCELERATION.  The event system multiplies pointer deltas through a
+ * five-step table (measured live: thresholds 1/6/7/8/9 -> factors
+ * 1/2/3/5/7), so the polled position is up to seven times the hand
+ * movement and the view lurches across the steps.  While grabbed the
+ * table is set to one explicit linear step and the user's table is put
+ * back on release -- saved anew at every grab so a Preferences change
+ * made between grabs is never overwritten, and only put back if the
+ * table still holds our linear entry, so another writer's setting is
+ * never clobbered either.  All of it is optional: a failed open just
+ * means grabbed play keeps the desktop acceleration.
+ */
+static NXEventHandle  in_evh;          /* 0: event status unavailable */
+static NXMouseScaling in_savedScaling;
+static int            in_savedValid;
+static int            in_linearOn;
+
+static int
+IN_ScalingIsLinear (const NXMouseScaling *s)
+{
+    return s->numScaleLevels == 1 &&
+           s->scaleThresholds[0] == 1 && s->scaleFactors[0] == 1;
+}
+
+static void
+IN_LinearScalingOn (void)
+{
+    NXMouseScaling lin, back;
+
+    if (in_evh == 0 || in_linearOn)
+        return;
+    memset (&in_savedScaling, 0, sizeof (in_savedScaling));
+    NXGetMouseScaling (in_evh, &in_savedScaling);
+    if (in_savedScaling.numScaleLevels < 0 ||
+        in_savedScaling.numScaleLevels > NX_MAXMOUSESCALINGS)
+        return;                       /* the read said nothing usable */
+    in_savedValid = 1;
+    memset (&lin, 0, sizeof (lin));
+    lin.numScaleLevels = 1;
+    lin.scaleThresholds[0] = 1;
+    lin.scaleFactors[0] = 1;
+    NXSetMouseScaling (in_evh, &lin);
+    /* The calls return void; the read-back is the only receipt. */
+    memset (&back, 0, sizeof (back));
+    NXGetMouseScaling (in_evh, &back);
+    if (IN_ScalingIsLinear (&back))
+        in_linearOn = 1;
+    else
+        in_savedValid = 0;            /* nothing changed, keep nothing */
+}
+
+static void
+IN_LinearScalingOff (void)
+{
+    NXMouseScaling cur;
+
+    if (in_evh == 0 || !in_linearOn)
+        return;
+    in_linearOn = 0;
+    if (!in_savedValid)
+        return;
+    memset (&cur, 0, sizeof (cur));
+    NXGetMouseScaling (in_evh, &cur);
+    /* Only put ours back if the table still holds our linear entry --
+     * a Preferences change or a second instance owns it otherwise. */
+    if (IN_ScalingIsLinear (&cur))
+        NXSetMouseScaling (in_evh, &in_savedScaling);
+    in_savedValid = 0;
+}
+static int      in_hotkeyLatch;   /* a G whose down was consumed */
+static int      in_hadFocus;
+static char     in_titleBase[128];
+
+static void
+IN_ApplyGrab (void)
+{
+    char title[192];
+
+    if (!in_window)
+        return;
+    if (mouse_avail && in_grabbed) {
+        IN_LinearScalingOn ();
+        SDL_ShowCursor (SDL_DISABLE);
+        sprintf (title, "[Shift+Ctrl+G frees mouse] %s", in_titleBase);
+    } else if (mouse_avail) {
+        IN_LinearScalingOff ();       /* before the cursor is shown */
+        SDL_ShowCursor (SDL_ENABLE);
+        sprintf (title, "[Shift+Ctrl+G grabs mouse] %s", in_titleBase);
+    } else {
+        IN_LinearScalingOff ();
+        SDL_ShowCursor (SDL_ENABLE);
+        sprintf (title, "%s", in_titleBase);
+    }
+    SDL_SetWindowTitle (in_window, title);
+}
+
+static void
+IN_ToggleGrab (void)
+{
+    int i;
+
+    in_grabbed = !in_grabbed;
+    /* No K_MOUSEn may stay held across the edge: the button state is
+     * polled (IN_Commands), and an ungrabbed game stops polling. */
+    for (i = 0; i < 3; i++)
+        if (mouse_oldbuttonstate & (1 << i))
+            Key_Event (K_MOUSE1 + i, false);
+    mouse_oldbuttonstate = 0;
+    mouse_x = mouse_y = 0.0;
+    in_hadFocus = 0;         /* the next focused poll only recentres */
+    IN_ApplyGrab ();
+}
+
 /* Each video backend calls this once, with the window it created.  The
  * mouse warp needs a window in SDL2, and neither backend can pass its own
  * static to the other. */
 void
 IN_SetWindow (SDL_Window *w)
 {
+    const char *t;
+
     in_window = w;
+    if (in_evh == 0)
+        in_evh = NXOpenEventStatus ();
+    /* IN_Init ran before VID_Init made this window (host.c:885), so the
+     * initial cursor and title land here, and the engine's own title --
+     * "glquake" or "sdlquake" -- is kept underneath the hint. */
+    t = w ? SDL_GetWindowTitle (w) : 0;
+    if (t == 0) t = "";
+    strncpy (in_titleBase, t, sizeof (in_titleBase) - 1);
+    in_titleBase[sizeof (in_titleBase) - 1] = 0;
+    in_hadFocus = 0;
+    IN_ApplyGrab ();
 }
 
 /*
@@ -44,7 +195,6 @@ void Sys_SendKeyEvents(void)
     SDL_Event event;
     int sym, state;
     int modstate;
-    int warped = 0;
 
     while (SDL_PollEvent(&event))
     {
@@ -54,6 +204,29 @@ void Sys_SendKeyEvents(void)
             case SDL_KEYUP:
                 sym = event.key.keysym.sym;
                 state = event.key.state;
+                /*
+                 * Shift+Ctrl+G toggles the grab.  Judged on the EVENT's own
+                 * modifier snapshot: this pump drains the whole native
+                 * queue first, so SDL_GetModState() can already be past a
+                 * Ctrl-up that came after this G went down.  The down is
+                 * consumed, the latch consumes autorepeats and the matching
+                 * up -- Quake never sees half a keystroke -- and a G that
+                 * went down as an ordinary key still delivers its up.
+                 */
+                if (sym == SDLK_g) {
+                    if (event.type == SDL_KEYDOWN &&
+                        (event.key.keysym.mod & KMOD_SHIFT) != 0 &&
+                        (event.key.keysym.mod & KMOD_CTRL) != 0) {
+                        if (event.key.repeat == 0 && mouse_avail)
+                            IN_ToggleGrab ();
+                        in_hotkeyLatch = 1;
+                        break;
+                    }
+                    if (event.type == SDL_KEYUP && in_hotkeyLatch) {
+                        in_hotkeyLatch = 0;
+                        break;
+                    }
+                }
                 modstate = SDL_GetModState();
                 switch(sym)
                 {
@@ -146,55 +319,14 @@ void Sys_SendKeyEvents(void)
                 break;
 
             case SDL_MOUSEMOTION:
-                if (!mouse_avail)
-                    break;
                 /*
-                 * ACCUMULATED, where the original assigned.
-                 *
-                 * This function drains the queue once a frame, and the
-                 * original kept only the LAST motion event's delta -- every
-                 * earlier one in the same frame was thrown away.  AppKit
-                 * delivers a mouseMoved for every step the pointer takes and
-                 * a frame here takes long enough to collect dozens, so a
-                 * whole sweep of the hand became one small step: the mouse
-                 * looked dead, and the slower the frame, the deader.
-                 *
-                 * No test on the position before adding.  The original
-                 * skipped an event that landed exactly on the centre, to
-                 * ignore its own warp; but SDL2 resets its reference point
-                 * when it warps, so the warp's synthetic event carries a
-                 * zero delta and adds nothing -- while a REAL move that ends
-                 * on the centre carries a real delta the old test threw away.
+                 * Not used for view rotation.  On this AppKit the moved
+                 * events simply do not arrive while the pointer crosses the
+                 * view (traced: 1,400 events, 1,397 of them the warp's own
+                 * synthetics), so the rotation is POLLED from the current
+                 * hardware position after the drain -- see below.  Dragged
+                 * and button events still work the ordinary way.
                  */
-                mouse_x += event.motion.xrel*10;
-                mouse_y += event.motion.yrel*10;
-                /*
-                 * Warp back to the centre once the pointer has strayed past a
-                 * quarter of the window, measured in the WINDOW's pixels --
-                 * event coordinates are the window's, and in the software
-                 * build vid.width is the render size, which -fullscreen makes
-                 * a different number.  At most once per drain: a slow frame
-                 * can queue many events past the threshold, and each warp is
-                 * a Window Server round trip that the next event undoes.
-                 */
-                if (!warped) {
-                    int ww = 0, wh = 0;
-
-                    SDL_GetWindowSize(in_window, &ww, &wh);
-                    if (ww > 0 && wh > 0 &&
-                        (event.motion.x < ww/2 - ww/4 ||
-                         event.motion.x > ww/2 + ww/4 ||
-                         event.motion.y < wh/2 - wh/4 ||
-                         event.motion.y > wh/2 + wh/4)) {
-                        /* SDL_WarpMouse -> SDL_WarpMouseInWindow: SDL2 warps
-                         * within a named window rather than the screen.
-                         * SDL_SetRelativeMouseMode would remove the warp
-                         * entirely, but this backend has no native relative
-                         * mode and would fall back to warping anyway. */
-                        SDL_WarpMouseInWindow(in_window, ww/2, wh/2);
-                        warped = 1;
-                    }
-                }
                 break;
 
             case SDL_QUIT:
@@ -204,6 +336,61 @@ void Sys_SendKeyEvents(void)
                 break;
             default:
                 break;
+        }
+    }
+
+    /*
+     * THE POLLED GRAB.  Once per pump, while grabbed, keyboard-focused and
+     * mouse-focused: read the CURRENT hardware position (the backend asks
+     * mouseLocationOutsideOfEventStream, which needs no event flow), take
+     * its distance from the window centre as this frame's hand movement,
+     * and warp back to the centre.  SDL_GetGlobalMouseState returns GLOBAL
+     * screen coordinates, so the window position is subtracted first; the
+     * result is clamped to the window so an escaped pointer cannot
+     * over-rotate.  The first focused poll only recentres -- there is no
+     * guarantee the pointer started at the centre -- and losing focus, the
+     * grab toggle and a new window all reset that reference.
+     *
+     * When the mouse focus is elsewhere (the pointer slipped out between
+     * pumps and mouseExited ran) the poll is skipped for that pump: the
+     * backend would report (0,0) with no focus window, and the warp below
+     * still brings the pointer home for the next pump.
+     */
+    if (mouse_avail && in_grabbed && in_window != 0) {
+        if ((SDL_GetWindowFlags (in_window) & SDL_WINDOW_INPUT_FOCUS) &&
+            SDL_GetMouseFocus () == in_window) {
+            int ww = 0, wh = 0, wx = 0, wy = 0, gx = 0, gy = 0;
+            int px, py;
+
+            SDL_GetWindowSize (in_window, &ww, &wh);
+            SDL_GetWindowPosition (in_window, &wx, &wy);
+            if (ww > 0 && wh > 0) {
+                SDL_GetGlobalMouseState (&gx, &gy);
+                px = gx - wx;
+                py = gy - wy;
+                if (px < 0) px = 0;
+                if (px >= ww) px = ww - 1;
+                if (py < 0) py = 0;
+                if (py >= wh) py = wh - 1;
+                if (in_hadFocus) {
+                    /*
+                     * No amplifier.  The old *10 dated from the event path
+                     * under desktop acceleration; on polled linear deltas
+                     * it made ONE PIXEL two thirds of a degree, and slow
+                     * aiming stepped like a robot.  A pixel is now the
+                     * finest unit the engine sees (0.022 deg times
+                     * sensitivity); speed is the player's sensitivity
+                     * cvar, resolution is this.
+                     */
+                    mouse_x += (float)(px - ww / 2);
+                    mouse_y += (float)(py - wh / 2);
+                }
+                SDL_WarpMouseInWindow (in_window, ww / 2, wh / 2);
+                PSWait ();     /* see the declaration above */
+                in_hadFocus = 1;
+            }
+        } else {
+            in_hadFocus = 0;
         }
     }
 }
@@ -219,6 +406,11 @@ void IN_Init (void)
 void IN_Shutdown (void)
 {
     mouse_avail = 0;
+    IN_LinearScalingOff ();
+    if (in_evh != 0) {
+        NXCloseEventStatus (in_evh);
+        in_evh = 0;
+    }
 }
 
 void IN_Commands (void)
@@ -226,7 +418,7 @@ void IN_Commands (void)
     int i;
     int mouse_buttonstate;
 
-    if (!mouse_avail) return;
+    if (!mouse_avail || !in_grabbed) return;
 
     i = SDL_GetMouseState(NULL, NULL);
     /* Quake swaps the second and third buttons */
@@ -243,7 +435,7 @@ void IN_Commands (void)
 
 void IN_Move (usercmd_t *cmd)
 {
-    if (!mouse_avail)
+    if (!mouse_avail || !in_grabbed)
         return;
 
     mouse_x *= sensitivity.value;
