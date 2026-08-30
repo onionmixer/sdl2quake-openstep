@@ -326,13 +326,13 @@ MGA_Stats_Dump (void (*out)(char *fmt, ...))
         if (any) out ("\n");
     }
     {
-        unsigned long wb[6];
+        unsigned long wb[7];
         OSMGAMesaHookWhyBatch (wb);
         out ("flush         : bracket %lu, key %lu, full %lu, other %lu,"
              " clip %lu\n", fl[0], fl[1], fl[2], fl[3], wb[0]);
         out ("  key was       : texture %lu, gradients %lu\n", wb[4], wb[5]);
-        out ("warp declined : state %lu, vertex %lu, forced %lu\n",
-             wb[1], wb[2], wb[3]);
+        out ("warp declined : state %lu, vertex %lu, forced %lu,"
+             " rhw ratio %lu\n", wb[1], wb[2], wb[3], wb[6]);
         {
             static const char *wn[OSMGA_WARP_NO_COUNT] = {
                 "null", "xbits", "xrange", "ybits", "yrange", "zbits",
