@@ -277,6 +277,9 @@ MGA_Stats_Dump (void (*out)(char *fmt, ...))
          " prevalidated %lu\n",
          OSMGAMesaHookBatches (), OSMGAMesaHookDeclined (),
          OSMGAMesaHookNarrowed (), OSMGAMesaHookPrevalidated ());
+    out ("losses        : rescued %lu, dropped %lu (clipped %lu)\n",
+         OSMGAMesaHookRescued (), OSMGAMesaHookDropped (),
+         OSMGAMesaHookDroppedClipped ());
     any = 0;
     for (i = 0; i < OSMGA_MESA_VERDICTS; i++)
         if (OSMGAMesaHookVerdictCount (i)) {
@@ -735,6 +738,15 @@ VID_Init (unsigned char *palette)
         e = getenv ("OSMGA_QUIT_AFTER_FRAMES");
         if (e && atol (e) > 0)
             mga_quit_frames = (unsigned long)atol (e);
+        /* Timing instrumentation costs ~4%% of a frame (the hook's own
+         * note), so it is opt-in: the submit-microseconds line in
+         * mgastats reads zero without it. */
+        if (getenv ("OSMGA_STATS_TIME"))
+            OSMGAMesaHookInstrument (1);
+        /* Test only: refuse every batch (corrupt magic, judged before
+         * encoding) so the replay and drop paths run for real. */
+        if (getenv ("OSMGA_INJECT_REFUSAL"))
+            OSMGAMesaHookInjectRefusal (1);
         /* Always: a harness ends a run with SIGTERM, and a run that quits
          * through Host_Shutdown leaves the console and the driver tidy
          * whether or not it was counting. */
