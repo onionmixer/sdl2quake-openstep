@@ -317,3 +317,10 @@ host_speeds: tot 120 = server 2.2 + gfx 118.3 (렌더가 프레임의 98%).
 
 주의: run-glquake-self.sh 의 5번째 이후 인자는 전부 EXTRA 로 전달된다(따옴표
 불필요). WARP 인자는 shift 전에 캡처한다 — 한 번 틀려서 trapezoid 로 쟀다.
+
+## 12. 현황 (2026-08-31)
+
+T5(클립 병합)·v10 epoch 검사·Q4(grab/사운드/선형화/PSWait) 완료.  레벨
+프레임 130 ms(7.7 fps), 전량 WARP, 거절·손실 0.  1024×768 데스크톱 A/B:
+제출 66.6→60.8 ms(스캔아웃 대역폭), 프레임 동일(CPU 병목).  남은 시각
+결함은 Q5_GL_COVERAGE_AUDIT.md 가 정본.
