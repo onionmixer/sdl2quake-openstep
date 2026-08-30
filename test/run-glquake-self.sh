@@ -7,10 +7,16 @@
 BIN=${1:-/usr/local/nxbuild/bin/glquake}
 FRAMES=${2:-100}
 DEADLINE=${3:-35}
-EXTRA=${5:-}
+WARP=${4:-0}
+if [ $# -gt 4 ]; then
+    shift 4
+    EXTRA="$*"
+else
+    EXTRA=
+fi
 cd /usr/local/quake || exit 1
 rm -f core
-OSMGA_MESA_WARP=${4:-0}; export OSMGA_MESA_WARP
+OSMGA_MESA_WARP=$WARP; export OSMGA_MESA_WARP
 OSMGA_STATS_EVERY=1; export OSMGA_STATS_EVERY
 OSMGA_QUIT_AFTER_FRAMES=$FRAMES; export OSMGA_QUIT_AFTER_FRAMES
 OSMGA_MESA_DEADLINE_SECS=$DEADLINE; export OSMGA_MESA_DEADLINE_SECS

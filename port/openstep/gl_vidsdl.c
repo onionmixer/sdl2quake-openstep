@@ -254,11 +254,12 @@ CheckMultiTextureExtensions (void)
 static void
 MGA_Stats_Dump (void (*out)(char *fmt, ...))
 {
-    unsigned long fl[4], sb[6];
+    unsigned long fl[4], sb[6], bk[2];
     int i, any;
 
     OSMGAMesaHookFlushCounts (fl);
     OSMGAMesaHookSubmitStats (sb);
+    OSMGAMesaHookBracketStats (bk);
 
     out ("surface       : %s\n",
          OSMGAMesaBufferOrigin () ? "the engine's" : "the caller's");
@@ -354,6 +355,7 @@ MGA_Stats_Dump (void (*out)(char *fmt, ...))
     }
     out ("submit        : %lu calls, %lu us, %lu dwords, spins %lu (max %lu)\n",
          sb[0], sb[1], sb[2], sb[3], sb[4]);
+    out ("bracket       : %lu opens, %lu us\n", bk[0], bk[1]);
     out ("texture       : uploads %lu, refused %lu, evicted %lu\n",
          OSMGAMesaTexUploads (), OSMGAMesaTexRefused (), OSMGAMesaTexEvicted ());
     out ("read back     : %lu copies\n", OSMGAMesaBufferCopies ());

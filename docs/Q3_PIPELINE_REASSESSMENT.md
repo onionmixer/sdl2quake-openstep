@@ -293,3 +293,27 @@ T4(WARP 재기준) 실기 육안 검증: **화면 정상** — 텍스처 정위�
 
 남은 프레임 비용: 제출 66.5 ms(bracket 155회 — 다음 후보는 bracket 간 병합),
 나머지 ~87 ms 는 Mesa immediate-mode T&L CPU 비용.
+
+## 11. T&L 측정 — 프레임 시간의 해부 (2026-08-31)
+
+bracket 시계(RenderStart 진입~RenderFinish 반환, `OSMGA_STATS_TIME=1` 로 arm,
+mgastats `bracket` 줄)와 Quake `host_speeds 1` 을 겹쳐 레벨 프레임 153 ms 를
+분해했다:
+
+| 구간 | ms | 내용 |
+|---|---|---|
+| 제출 | 66.4 | ioctl 진입+인코딩+완료 대기 (155회/프레임) |
+| bracket 내부 비제출 | 40.1 | Mesa T&L(변환·클립·셰이드·투영)+래스터셋업+훅 |
+| bracket 외부 | 46.8 | 그중 게임 로직(server+cl)은 **~2 ms** — 나머지는 R_RenderView 의 BSP/표면 순회 + glVertex/glTexCoord 디스패치 + Mesa VB 축적 |
+
+host_speeds: tot 120 = server 2.2 + gfx 118.3 (렌더가 프레임의 98%).
+참고로 WARP 인자 버그로 우연히 잰 trapezoid 티어는 ~300 ms/프레임 — WARP 이
+프레임을 절반으로 줄이고 있음을 재확인.
+
+다음 후보의 상한(제출 모형 85.4µs+132.4ns/dw):
+- bracket 간 병합: ~10-13 ms (state 변경 43회/프레임이 하한)
+- Mesa T&L 내부: 40 ms 전부가 이론 상한, 범용 Mesa 코드라 난이도 높음
+- 디스패치/순회 47 ms: GLQuake 쪽 호출 수 감소(immediate-mode 축소)가 지렛대
+
+주의: run-glquake-self.sh 의 5번째 이후 인자는 전부 EXTRA 로 전달된다(따옴표
+불필요). WARP 인자는 shift 전에 캡처한다 — 한 번 틀려서 trapezoid 로 쟀다.
