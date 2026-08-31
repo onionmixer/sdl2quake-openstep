@@ -37,6 +37,17 @@ rm -rf "$STAGEPARENT" "$OUT/$NAME.pkg"
 /bin/mkdirs "$STAGE"
 cp -r "$DATA/id1" "$STAGE/id1"
 
+# LibreQuake 0.09 ships this sound as slmbrn2.wav; the ENGINE asks for
+# slimbrn2.wav from C code (pr_cmds.c:1792), which no data file can
+# override.  A loose alias beside the paks satisfies the lookup -- pak
+# entries and loose files share one namespace and nothing else claims
+# the name.  Guarded, so a fixed upstream release makes this a no-op.
+if [ ! -f "$STAGE/id1/sound/player/slimbrn2.wav" ] && \
+   [ -f "$STAGE/id1/sound/player/slmbrn2.wav" ]; then
+    cp "$STAGE/id1/sound/player/slmbrn2.wav" \
+       "$STAGE/id1/sound/player/slimbrn2.wav"
+fi
+
 long=`( cd "$STAGE" && find . -print ) | awk 'length($0) >= 100' | wc -l`
 if [ "$long" -gt 0 ]; then
     echo "build-sdl2quake-libre-pkg: $long payload paths reach" >&2
