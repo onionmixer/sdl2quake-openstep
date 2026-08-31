@@ -114,3 +114,45 @@ isPermedia=true → gl_lightmap_format=GL_RGBA.  GL_BuildLightMap 은 **알파
 [T7] r_dynamic 1 + 어두운 벽 사격 -- TexSubImage 실기 확인
 [T8] WARP=0 (사다리꼴) 및 glquake_sw (순수 Mesa) 대조 -- 티어 격리
 ```
+
+## 9. 원인 확정과 수정 계획 (2026-08-31, 실기 판별 후)
+
+### 실기 판별 결과
+- 사다리꼴 티어: 전 화면 정상 (느림) → 깨짐은 WARP 특유.
+- WARP: 콘솔 **반개**(Draw_AlphaPic = blend ON·atest OFF) 배경 보임;
+  **전개/시작화면**(Draw_Pic = atest ON·blend OFF) 배경 검정.
+- `gl_clear 1` → 하단 상태바 영역이 clear 색(빨강) 그대로 = 상태바 픽들이
+  아예 안 그려짐.
+
+### 원인 사슬 (세 층 일치)
+1. 아레나는 RGB 텍스처의 알파 바이트를 **포이즌 0** 으로 저장한다
+   (Texture.c osmgaTexCopy — "알파를 읽는 모드가 생기면 재검토" 주석).
+2. G400 스펙: **알파 테스트는 두 곳** — 제1 테스트는 *텍스처 필터링 직후*
+   원시 텍스처 알파에 수행되고 atmode 로만 끌 수 있다 (G400SPEC 3-34,
+   ALPHACTRL 노트).  TDS/alphasel 이전이므로 ARG2(반복 알파) 선택은 이
+   테스트에 영향을 못 준다.
+3. GLQuake 2D 는 atest(GT 170) ON + RGB 텍스처(conback·sbar) → 제1
+   테스트에서 전 픽셀 탈락.  글자/스프라이트(RGBA, 알파 255 부분)는 통과 —
+   흰 글자만 보인 이유.  (참고: `OSMGA_MESA_ALPHASEL_TEX = 0x0` 은 기본값과
+   같은 no-op 였다 — blend 경로가 옳았던 것은 TDS ARG2 덕.)
+
+### 수정 (2차 — codex 반증 채택)
+~~0xFF 텍셀~~ 은 기각: 제1 테스트가 원시 At 를 읽는 한 어떤 저장값도 모든
+알파 함수에 중립일 수 없다(LESS/EQUAL 반례).  올바른 수정은 **AT 인코딩에서
+aten(enable) 비트를 빼는 것** — 제1 테스트(스테이지 앞, 원시 텍셀)는 끄고,
+atmode/atref 만으로 도는 **제2 테스트(스테이지 뒤)** 가 GL 의 최종 알파를
+비교한다.  ALPHASEL_TEX 정책에서 그 값은 RGB→Af, RGBA→At(REPLACE)/Af·At
+(MODULATE) — GL 의미론 그대로.  근거: 스펙 3-34 두-테스트 노트, W17 §9.1
+(aten=0 에서 제2 테스트 24/24 생존 실측), W18 §10 정정.  포이즌 텍셀은
+유지(이제 아무 경로도 읽지 않으며 보호값으로 남음).  `osmgaTexCopy` 의 RGB 경로가 알파에 **0xFF** 를 쓴다는 안 — GL 의미론(RGB 텍스처
+샘플의 A = 1.0) 그대로.  포이즌은 그 주석이 예고한 재검토 시점에 도달했다:
+이제 제1 알파 테스트가 그 바이트를 실제로 읽는다.
+- blend: RGB 는 TDS ARG2(반복 알파) → 텍셀 알파 무관 → 영향 없음.
+- RGBA 텍스처: 변화 없음.
+- 사다리꼴 티어: 같은 아레나를 읽지만 이미 정상이었고, 0xFF 는 GL 값이라
+  악화 경로 없음 (회귀로 확인).
+
+### 검증
+V1 glquake(WARP): 시작화면 배경·콘솔 전개 배경·하단 상태바 표시,
+잔상 소멸.  V2 사다리꼴 회귀(화면 정상 유지).  V3 130 ms 회귀 + declined 0.
+V4 squake 무관(소프트웨어).

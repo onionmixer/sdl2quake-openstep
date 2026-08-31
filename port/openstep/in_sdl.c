@@ -31,6 +31,30 @@
  * movement in 18/18 samples.  docs/Q4_GRAB_SOUND_PLAN.md section 9.
  */
 extern void PSWait (void);
+/*
+ * The flickering square under the crosshair was the SOFTWARE CURSOR's
+ * save-under: an invisible NSCursor image still makes the Window Server
+ * back up and restore the pixels beneath the pointer with the CPU, and
+ * those restores race the engine's drawing (the driver documents exactly
+ * this collision).  PShidecursor stops the machinery itself; the flag
+ * keeps hide and show strictly balanced, and the cursor comes back on
+ * ungrab, on focus loss and at shutdown.
+ */
+extern void PShidecursor (void);
+extern void PSshowcursor (void);
+static int in_psCursorHidden;
+
+static void
+IN_PSCursor (int hide)
+{
+    if (hide && !in_psCursorHidden) {
+        PShidecursor ();
+        in_psCursorHidden = 1;
+    } else if (!hide && in_psCursorHidden) {
+        PSshowcursor ();
+        in_psCursorHidden = 0;
+    }
+}
 
 static SDL_Window *in_window;
 
@@ -135,10 +159,12 @@ IN_ApplyGrab (void)
         sprintf (title, "[Shift+Ctrl+G frees mouse] %s", in_titleBase);
     } else if (mouse_avail) {
         IN_LinearScalingOff ();       /* before the cursor is shown */
+        IN_PSCursor (0);
         SDL_ShowCursor (SDL_ENABLE);
         sprintf (title, "[Shift+Ctrl+G grabs mouse] %s", in_titleBase);
     } else {
         IN_LinearScalingOff ();
+        IN_PSCursor (0);
         SDL_ShowCursor (SDL_ENABLE);
         sprintf (title, "%s", in_titleBase);
     }
@@ -364,6 +390,7 @@ void Sys_SendKeyEvents(void)
 
             SDL_GetWindowSize (in_window, &ww, &wh);
             SDL_GetWindowPosition (in_window, &wx, &wy);
+            IN_PSCursor (1);          /* no save-under while we own it */
             if (ww > 0 && wh > 0) {
                 SDL_GetGlobalMouseState (&gx, &gy);
                 px = gx - wx;
@@ -390,6 +417,7 @@ void Sys_SendKeyEvents(void)
                 in_hadFocus = 1;
             }
         } else {
+            IN_PSCursor (0);          /* another app owns the pointer */
             in_hadFocus = 0;
         }
     }
@@ -406,6 +434,7 @@ void IN_Init (void)
 void IN_Shutdown (void)
 {
     mouse_avail = 0;
+    IN_PSCursor (0);
     IN_LinearScalingOff ();
     if (in_evh != 0) {
         NXCloseEventStatus (in_evh);
