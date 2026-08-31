@@ -52,6 +52,15 @@ IN_PSCursor (int hide)
         in_psCursorHidden = 1;
     } else if (!hide && in_psCursorHidden) {
         PSshowcursor ();
+        /*
+         * FLUSHED, for the same reason the warp is (see PSWait above):
+         * the show is buffered, and the one place it matters most is
+         * shutdown -- where the process exits before any round trip
+         * would have carried it, the hide having long since landed.
+         * That is a desktop with a working, invisible pointer.  Shows
+         * are rare; the flush costs nothing measurable.
+         */
+        PSWait ();
         in_psCursorHidden = 0;
     }
 }
