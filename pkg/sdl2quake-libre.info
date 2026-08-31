@@ -1,0 +1,9 @@
+Title sdl2quake-libre
+Version 1.0
+Description LibreQuake's free game data (id1 directory: pak0.pak, pak1.pak and the credits that travel with them), packaged for the sdl2quake engine on OPENSTEP. Architecture-neutral data. LibreQuake is its own project -- https://github.com/lavenderdotpet/LibreQuake -- and its art is under its own BSD licence; this package only delivers it where the engine looks.
+DefaultLocation /usr/local/quake
+Relocatable YES
+Application NO
+UseUserMask NO
+DiskName SDL2 Quake LibreQuake data
+DeleteWarning Removing this package removes the id1 game data directory. The engine binaries beside it are untouched.
