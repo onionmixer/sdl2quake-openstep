@@ -53,6 +53,24 @@ cd /usr/local/quake
 The mouse is grabbed while a level is up; **Shift+Ctrl+G** hands it back,
 and the title bar says so.
 
+## Tested configuration
+
+Everything here was developed and measured on one machine, and the
+numbers assume its shape:
+
+| | |
+| --- | --- |
+| OS | OPENSTEP 4.2 (Intel), desktop at **1024x768, RGB:888/32, 60 Hz** |
+| Card | Matrox G450, 32 MB, primary head |
+| Driver | OSMGADisplay 1.3 with `VRAM Mmap` and `Mesa Acceleration` = Yes |
+| glquake | windowed **640x480** (the measured configuration); **1024x768** verified working |
+| squake | windowed **640x480** |
+
+The desktop depth matters: the accelerated path draws into a 32bpp
+surface, and the driver's GL is qualified at RGB:888/32.  A 1600x1200
+desktop also worked during development, but 1024x768 is where every
+number in this README and the driver's docs was taken.
+
 ## Building from source
 
 On the target, with the SDL2 port and Mesa built:
