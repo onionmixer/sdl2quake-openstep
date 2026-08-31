@@ -5,3 +5,6 @@ release-assets/
 
 # Built Installer packages stay out of the tree too.
 build/release-pkgs/
+
+# Internal handoff; operational detail that does not belong in a clone.
+HANDOFF_SDL2QUAKE.md

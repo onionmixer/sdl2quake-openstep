@@ -340,3 +340,8 @@ IN_Shutdown:   복원 + NXCloseEventStatus   (Sys_Quit 경유 SIGTERM 포함)
 교훈: §6(첫-위치 규칙)·§7(질의가 이벤트-fed)·가속(§8)은 각각 실재했지만
 주범이 아니었다.  주범은 격리 프로브 + 사용자의 육안 관찰("튀는 커서")이
 합쳐져서야 보였다.
+
+후기(2026-08-31): §9 의 버퍼링은 종료 경로에서 한 번 더 물었다 —
+IN_Shutdown 의 PSshowcursor 가 flush 전에 프로세스와 함께 죽어, grab 중
+종료마다 보이지 않는 포인터가 남았다.  show 직후 PSWait 로 종결
+(in_sdl.c).  회수 도구는 test/cursor-show.m.
