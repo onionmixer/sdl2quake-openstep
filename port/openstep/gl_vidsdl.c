@@ -508,13 +508,16 @@ GL_KeepFilterDrawable (void)
     extern int gl_filter_min, gl_filter_max;
     static qboolean told = false;
 
-    if (gl_filter_min == GL_LINEAR || gl_filter_min == GL_NEAREST)
+    if (gl_filter_min == GL_LINEAR || gl_filter_min == GL_NEAREST ||
+        gl_filter_min == GL_NEAREST_MIPMAP_NEAREST ||
+        gl_filter_min == GL_LINEAR_MIPMAP_NEAREST)
         return;
 
     if (!told) {
-        Con_Printf ("gl_texturemode: this driver draws no mipmap filter, so\n"
-                    "                the world would be rendered in software.\n"
-                    "                Using GL_LINEAR instead.\n");
+        Con_Printf ("gl_texturemode: the driver draws the *_MIPMAP_NEAREST\n"
+                    "                filters in hardware; the LINEAR-between-\n"
+                    "                levels ones would fall to software, so\n"
+                    "                GL_LINEAR_MIPMAP_NEAREST is used.\n");
         told = true;
     }
     /*
@@ -530,7 +533,8 @@ GL_KeepFilterDrawable (void)
      * slowest textured path at that (it takes the lambda route whenever
      * min and mag filters differ), for the life of the process.
      */
-    Cmd_ExecuteString ("gl_texturemode GL_LINEAR", src_command);
+    Cmd_ExecuteString ("gl_texturemode GL_LINEAR_MIPMAP_NEAREST",
+                       src_command);
     if (gl_filter_max != GL_LINEAR && gl_filter_max != GL_NEAREST)
         gl_filter_max = GL_LINEAR;
 }
@@ -559,9 +563,33 @@ GL_FilterAudit (void)
         glGetTexParameteriv (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, &mn);
         glGetTexParameteriv (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, &mg);
         total++;
-        if ((mn != GL_NEAREST && mn != GL_LINEAR) ||
+        if ((mn != GL_NEAREST && mn != GL_LINEAR &&
+             mn != GL_NEAREST_MIPMAP_NEAREST &&
+             mn != GL_LINEAR_MIPMAP_NEAREST) ||
             (mg != GL_NEAREST && mg != GL_LINEAR))
             off++;
+        /*
+         * Pin GL's own level clamp to the hardware's: the engine walks
+         * at most four maps below the base and no deeper than 8x8, so
+         * MAX_LEVEL is set to that same map.  This is what makes the
+         * mip acceleration EXACT rather than approximately right --
+         * Mesa's lambda clamp and the chip's mapnb then name the same
+         * last level (M12 section 8, review condition 3).
+         */
+        if (mn == GL_NEAREST_MIPMAP_NEAREST ||
+            mn == GL_LINEAR_MIPMAP_NEAREST) {
+            GLint tw = 0, th = 0, cap;
+
+            glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH,
+                                      &tw);
+            glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_HEIGHT,
+                                      &th);
+            cap = 0;
+            while ((8 << (cap + 1)) <= tw && (8 << (cap + 1)) <= th &&
+                   cap < 4)
+                cap++;
+            glTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, cap);
+        }
     }
     glBindTexture (GL_TEXTURE_2D, (GLuint)was);
     fprintf (stderr, "==== filter audit: %d texture objects, %d with a filter"
