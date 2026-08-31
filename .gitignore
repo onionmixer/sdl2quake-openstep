@@ -2,3 +2,6 @@
 build-output/
 release-assets/
 *.o
+
+# Built Installer packages stay out of the tree too.
+build/release-pkgs/
