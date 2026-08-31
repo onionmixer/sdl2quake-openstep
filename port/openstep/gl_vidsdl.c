@@ -450,12 +450,11 @@ GL_Init (void)
     glShadeModel (GL_FLAT);
 
     /*
-     * GL_LINEAR, not a mipmap filter, and this is the setting the whole
-     * exercise turns on.  Measured on this hardware: with
-     * GL_LINEAR_MIPMAP_NEAREST the driver's state gate selects software for
-     * every textured triangle; with GL_LINEAR it selects hardware and the
-     * card draws them.  Distant textures shimmer without mip levels, and
-     * that is the trade this build makes deliberately.
+     * (Historical: this once forced GL_LINEAR because the driver drew no
+     * mipmap filter at all.  Since driver 1.3 the WARP path draws every
+     * mip filter -- the *_MIPMAP_NEAREST pair exactly, the LINEAR pair
+     * as a documented approximation -- and the audit below pins
+     * MAX_LEVEL instead.)
      */
     /*
      * THE FILTER THAT MATTERS IS THE UPLOAD'S, NOT THIS ONE.
@@ -510,14 +509,15 @@ GL_KeepFilterDrawable (void)
 
     if (gl_filter_min == GL_LINEAR || gl_filter_min == GL_NEAREST ||
         gl_filter_min == GL_NEAREST_MIPMAP_NEAREST ||
-        gl_filter_min == GL_LINEAR_MIPMAP_NEAREST)
+        gl_filter_min == GL_LINEAR_MIPMAP_NEAREST ||
+        gl_filter_min == GL_NEAREST_MIPMAP_LINEAR ||
+        gl_filter_min == GL_LINEAR_MIPMAP_LINEAR)
         return;
 
     if (!told) {
-        Con_Printf ("gl_texturemode: the driver draws the *_MIPMAP_NEAREST\n"
-                    "                filters in hardware; the LINEAR-between-\n"
-                    "                levels ones would fall to software, so\n"
-                    "                GL_LINEAR_MIPMAP_NEAREST is used.\n");
+        Con_Printf ("gl_texturemode: not a GL minification filter this\n"
+                    "                driver knows; GL_LINEAR_MIPMAP_NEAREST\n"
+                    "                is used instead.\n");
         told = true;
     }
     /*
@@ -565,7 +565,9 @@ GL_FilterAudit (void)
         total++;
         if ((mn != GL_NEAREST && mn != GL_LINEAR &&
              mn != GL_NEAREST_MIPMAP_NEAREST &&
-             mn != GL_LINEAR_MIPMAP_NEAREST) ||
+             mn != GL_LINEAR_MIPMAP_NEAREST &&
+             mn != GL_NEAREST_MIPMAP_LINEAR &&
+             mn != GL_LINEAR_MIPMAP_LINEAR) ||
             (mg != GL_NEAREST && mg != GL_LINEAR))
             off++;
         /*
@@ -577,7 +579,9 @@ GL_FilterAudit (void)
          * last level (M12 section 8, review condition 3).
          */
         if (mn == GL_NEAREST_MIPMAP_NEAREST ||
-            mn == GL_LINEAR_MIPMAP_NEAREST) {
+            mn == GL_LINEAR_MIPMAP_NEAREST ||
+            mn == GL_NEAREST_MIPMAP_LINEAR ||
+            mn == GL_LINEAR_MIPMAP_LINEAR) {
             GLint tw = 0, th = 0, cap;
 
             glGetTexLevelParameteriv (GL_TEXTURE_2D, 0, GL_TEXTURE_WIDTH,
