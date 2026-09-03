@@ -16,7 +16,7 @@ This tree is a PORT.  The things it ports are their own projects:
 | Game data | [LibreQuake](https://github.com/lavenderdotpet/LibreQuake) -- free data, not in this repository; the `sdl2quake-libre` package carries it |
 | SDL2 | [onionmixer/openstep-sdl2](https://github.com/onionmixer/openstep-sdl2) -- SDL 2.32.10 for OPENSTEP (openstep.2 or later) |
 | Display driver + GL | [onionmixer/openstep-matrox-remade](https://github.com/onionmixer/openstep-matrox-remade) -- the G450 driver and `libGL_mga.a` (1.3 or later for mipmapping) |
-| Mesa port | [onionmixer/opennstep-mesa342](https://github.com/onionmixer/opennstep-mesa342) -- Mesa 3.4.2 on OPENSTEP |
+| Mesa port | [onionmixer/openstep-mesa342](https://github.com/onionmixer/openstep-mesa342) -- Mesa 3.4.2 on OPENSTEP |
 
 Nothing in `upstream/` is edited.  The files in `port/openstep/` are copies
 that carry a notice saying what changed and when, and the build scripts
