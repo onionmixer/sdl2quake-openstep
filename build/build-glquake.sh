@@ -16,7 +16,7 @@
 # path Quake shipped on every non-x86 machine.
 set -e
 ROOT=${1:-/ndrv/openstep-quake}
-SDLB=${2:-/me/SDL20/build/SDL-2.32.10-openstep}
+SDLB=${2:-/LocalDeveloper}
 MGA=${3:-/ndrv/openstep-matrox-remade}
 OUT=${4:-/usr/local/nxbuild}
 SRC=$ROOT/upstream/sdlquake
@@ -39,11 +39,48 @@ else
     OPT="-O"
     BINSUFFIX=""
 fi
+#
+# AN INSTALLED PREFIX OR A BUILD TREE, for SDL2 -- see the same block in
+# build-openstep-quake.sh for why the choice is made from what is on disk
+# and printed rather than assumed.
+#
+if [ -r "$SDLB/Libraries/libSDL2.a" ]; then
+    SDL_LIB=$SDLB/Libraries/libSDL2.a
+    SDL_INC="-I$SDLB/Headers/SDL2 -I$SDLB/Headers"
+else
+    SDL_LIB=$SDLB/libSDL2.a
+    SDL_INC="-I$SDLB/include -I$SDLB/src/video/openstep"
+fi
+#
+# THE ACCELERATED MESA STILL COMES FROM ITS SOURCE TREE, and it is worth
+# saying why rather than leaving it looking like an oversight.  The
+# archive itself is installed -- /LocalDeveloper/Libraries/libGL_mga.a --
+# and so are four of its headers, but gl_vidsdl.c also includes
+# OpenStepMGAMesaTexture.h, OpenStepMGAMesaTriangle.h and
+# OpenStepMGAMesaWarp.h, and those three are not in the Matrox project's
+# Headers package.  Until they are, this build needs that tree for its
+# includes.  The library is taken from the installed prefix when it is
+# there, so at least the code that runs is the code that was installed.
+#
+if [ -r "$SDLB/Libraries/libGL_mga.a" ]; then
+    MGA_LIB=$SDLB/Libraries/libGL_mga.a
+else
+    MGA_LIB=$MGA/build/mesa/libGL_mga.a
+fi
+if [ -r "$SDLB/Libraries/libGL.a" ]; then
+    MGA_PLAIN=$SDLB/Libraries/libGL.a
+else
+    MGA_PLAIN=$MGA/build/mesa/libGL.a
+fi
+echo "build-glquake: SDL       $SDL_LIB"
+echo "build-glquake: accel GL  $MGA_LIB"
+echo "build-glquake: plain GL  $MGA_PLAIN"
+
 CFLAGS="-m486 $OPT -DGLQUAKE -D__OPENSTEP__ -Dstricmp=strcasecmp -I$SRC \
- -I$SDLB/include -I$SDLB/src/video/openstep -I$MGA/mesa -I$MGA/hw3d \
+ $SDL_INC -I$MGA/mesa -I$MGA/hw3d \
  -I$MGA/build/mesa/include"
 
-for need in "$SRC/glquake.h" "$SDLB/libSDL2.a" "$MGA/build/mesa/libGL_mga.a"; do
+for need in "$SRC/glquake.h" "$SDL_LIB" "$MGA_LIB"; do
     if [ ! -r "$need" ]; then
         echo "build-glquake: missing $need" >&2
         exit 2
@@ -101,7 +138,7 @@ echo ""
 echo "link:"
 rm -f $OUT/bin/glquake$BINSUFFIX
 cc -m486 $OPT -o $OUT/bin/glquake$BINSUFFIX $OBJ/*.o \
-    $SDLB/libSDL2.a $MGA/build/mesa/libGL_mga.a -lm \
+    $SDL_LIB $MGA_LIB -lm \
     -framework AppKit -framework Foundation -framework SoundKit
 csh -f /me/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake$BINSUFFIX
 #
@@ -110,7 +147,7 @@ csh -f /me/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake$B
 # only in the accelerated one belongs to the card's path.  Every demo pair in
 # this workspace exists for the same reason.
 #
-if [ -r "$MGA/build/mesa/libGL.a" ]; then
+if [ -r "$MGA_PLAIN" ]; then
     # OUTSIDE $OBJ on purpose: the list below is built from $OBJ/*.o, and an
     # object left in that directory is picked up again by the glob -- which
     # linked two copies of the video backend and every global in it twice.
@@ -125,7 +162,7 @@ if [ -r "$MGA/build/mesa/libGL.a" ]; then
         fi
     done
     cc -m486 $OPT -o $OUT/bin/glquake_sw$BINSUFFIX `cat /tmp/glq-plain-objs` /tmp/glq-plain-vid.o \
-        $SDLB/libSDL2.a $MGA/build/mesa/libGL.a -lm \
+        $SDL_LIB $MGA_PLAIN -lm \
         -framework AppKit -framework Foundation -framework SoundKit
     csh -f /me/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake_sw
     echo "  control: $OUT/bin/glquake_sw (stock Mesa)"

@@ -1,5 +1,5 @@
 Title sdl2quake
-Version 1.1
+Version 1.2
 Description Quake for OPENSTEP 4.2 on Intel i486: squake (software renderer, AppKit window) and glquake (hardware, drawn by a Matrox G450 through the OpenStepMGA driver's accelerated Mesa -- requires OSMGADisplay 1.3+ with VRAM Mmap and Mesa Acceleration set to Yes). Both statically linked; no libraries are installed. Game data is NOT included: install sdl2quake-libre at the same place, or provide your own id1 directory.
 DefaultLocation /usr/local/quake
 Relocatable YES

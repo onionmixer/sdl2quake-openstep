@@ -18,15 +18,42 @@
 # assembly would buy back a few percent of a frame.
 set -e
 ROOT=${1:-/ndrv/openstep-quake}
-SDLB=${2:-/me/SDL20/build/SDL-2.32.10-openstep}
-MESA=${3:-/me/SDL20/mesa/Mesa-3.4.2}
+SDLB=${2:-/LocalDeveloper}
+MESA=${3:-/LocalDeveloper}
 OUT=${4:-/usr/local/nxbuild}
 SRC=$ROOT/upstream/sdlquake
 PORT=$ROOT/port/openstep
 OBJ=/tmp/quake-obj
-CFLAGS="-m486 -O -D__OPENSTEP__ -Dstricmp=strcasecmp -I$SRC -I$SDLB/include"
 
-for need in "$SRC/quakedef.h" "$SDLB/libSDL2.a" "$MESA/lib/libGL.a"; do
+#
+# AN INSTALLED PREFIX OR A BUILD TREE -- both, because they are different
+# shapes and the default is now the installed one.
+#
+# A build tree keeps libSDL2.a and include/ side by side; the Installer
+# packages put the library under Libraries/ and the headers under
+# Headers/SDL2/.  Linking a build tree while believing you linked the
+# package is how a measurement was once taken against a library that had
+# been superseded hours earlier, so the choice is made here, once, from
+# what is actually on disk, and printed.
+#
+if [ -r "$SDLB/Libraries/libSDL2.a" ]; then
+    SDL_LIB=$SDLB/Libraries/libSDL2.a
+    SDL_INC="-I$SDLB/Headers/SDL2 -I$SDLB/Headers"
+else
+    SDL_LIB=$SDLB/libSDL2.a
+    SDL_INC="-I$SDLB/include"
+fi
+if [ -r "$MESA/Libraries/libGL.a" ]; then
+    GL_LIB=$MESA/Libraries/libGL.a
+else
+    GL_LIB=$MESA/lib/libGL.a
+fi
+echo "build-openstep-quake: SDL  $SDL_LIB"
+echo "build-openstep-quake: Mesa $GL_LIB"
+
+CFLAGS="-m486 -O -D__OPENSTEP__ -Dstricmp=strcasecmp -I$SRC $SDL_INC"
+
+for need in "$SRC/quakedef.h" "$SDL_LIB" "$GL_LIB"; do
     if [ ! -r "$need" ]; then
         echo "build-openstep-quake: missing $need" >&2
         exit 2
@@ -62,7 +89,7 @@ echo ""
 echo "link:"
 rm -f $OUT/bin/squake
 cc -m486 -o $OUT/bin/squake $OBJ/*.o \
-    $SDLB/libSDL2.a $MESA/lib/libGL.a -lm \
+    $SDL_LIB $GL_LIB -lm \
     -framework AppKit -framework Foundation -framework SoundKit
 csh -f /me/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/squake
 echo ""

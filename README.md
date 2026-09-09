@@ -73,18 +73,30 @@ number in this README and the driver's docs was taken.
 
 ## Building from source
 
-On the target, with the SDL2 port and Mesa built:
+On the target, with the SDL2 and Mesa **packages installed**:
 
 ```
 sh /ndrv/openstep-quake/build/build-openstep-quake.sh    # squake
 sh /ndrv/openstep-quake/build/build-glquake.sh           # glquake
 ```
 
-Both scripts take the SDL2 build directory and the Mesa/driver trees as
-arguments; the defaults name the paths this workspace uses.  `glquake`
-links `libGL_mga.a` and gets the card; the same script also links a
-`glquake_sw` control against stock Mesa, which draws the same picture the
-slow way and exists to be compared against.
+Both scripts default to `/LocalDeveloper`, the prefix the Installer
+packages write to, and each prints the archives it chose before it links
+anything.  Given a build tree instead -- `libSDL2.a` and `include/` side
+by side rather than `Libraries/` and `Headers/` -- they take that shape
+too, so a development tree still works; the point of printing is that
+"what was installed" and "what the binary contains" can no longer differ
+without saying so.
+
+`glquake` links `libGL_mga.a` and gets the card; the same script also
+links a `glquake_sw` control against stock Mesa, which draws the same
+picture the slow way and exists to be compared against.
+
+`glquake` still needs the driver's source tree for three headers --
+`OpenStepMGAMesaTexture.h`, `OpenStepMGAMesaTriangle.h` and
+`OpenStepMGAMesaWarp.h` -- which the Matrox Headers package does not
+carry.  Everything else, including `libGL_mga.a` itself, comes from the
+installed prefix.
 
 ## What the hardware path does
 
