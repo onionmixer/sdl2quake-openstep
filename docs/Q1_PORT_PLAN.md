@@ -745,7 +745,7 @@ Added packfile /usr/local/quake/id1/pak0.pak (353 files)
 Added packfile /usr/local/quake/id1/pak1.pak (60 files)
 Playing registered version.
 Console initialized.
-UDP_Init: "nextonion" does not resolve; using 127.0.0.1.
+UDP_Init: "<this host>" does not resolve; using 127.0.0.1.
 UDP Initialized
 16.0 megabyte heap
 execing quake.rc / default.cfg
@@ -772,7 +772,7 @@ myAddr = *(int *)local->h_addr_list[0];      /* local 을 안 본다 */
 **추측하지 않고 확인했다.**  같은 두 호출만 하는 프로그램을 짜서 돌렸다:
 
 ```
-gethostname()   : "nextonion"
+gethostname()   : "<this host>"
 gethostbyname() : NULL
 ```
 

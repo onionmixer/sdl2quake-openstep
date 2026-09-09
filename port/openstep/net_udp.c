@@ -85,8 +85,8 @@ int UDP_Init (void)
 	 *     local = gethostbyname(buff);
 	 *     myAddr = *(int *)local->h_addr_list[0];
 	 *
-	 * On this machine gethostname() returns "nextonion" and
-	 * gethostbyname("nextonion") returns NULL -- there is no entry for it in
+	 * On this machine gethostname() returns a name and
+	 * gethostbyname() of that name returns NULL -- there is no entry for it in
 	 * hosts or NetInfo -- so that second line dereferences NULL, and on
 	 * i386 Mach that is a bus error before any window is ever created.
 	 * Measured: the engine died between "Console initialized." and the
