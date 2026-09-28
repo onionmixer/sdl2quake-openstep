@@ -72,13 +72,52 @@ if [ -r "$SDLB/Libraries/libGL.a" ]; then
 else
     MGA_PLAIN=$MGA/build/mesa/libGL.a
 fi
+#
+# ACCEL=radeon: THE SAME ENGINE ON THE RADEON LIBRARY (openstep-radeon9250,
+# docs/G4_GLQUAKE_PLAN.md G4-0).  gl_vidsdl.c is not touched: it includes the
+# Matrox header names, and the radeon project's test/mgashim directory carries
+# those six names, each of them one include of osrdn-mga-shim.h, which maps
+# every OSMGA* symbol the port calls onto the radeon library's counters and
+# functions.  Only the include path, the archive and the output name differ.
+#
+#   ACCEL=radeon RDN_LIB=/ndrv/openstep-radeon9250/build/m1b/<runid>/libGL_radeon.a \
+#       sh build-glquake.sh
+#
+# RDN_LIB names the archive of one library build (they are kept by run id, so
+# the binary says which library it was linked with).  No control binary is
+# built in this mode -- glquake_sw from the Matrox build is the same control.
+#
+ACCEL=${ACCEL:-matrox}
+RDN=${RDN:-/ndrv/openstep-radeon9250}
+if [ "$ACCEL" = "radeon" ]; then
+    if [ -z "${RDN_LIB:-}" ] || [ ! -r "$RDN_LIB" ]; then
+        echo "build-glquake: ACCEL=radeon needs RDN_LIB=<path to libGL_radeon.a>" >&2
+        exit 2
+    fi
+    MGA_LIB=$RDN_LIB
+    MGA_PLAIN=""
+    # The shim directory must come BEFORE the SDL prefix's Headers: the Matrox
+    # headers are installed there under the same seven names, and a quoted
+    # include takes the first directory that has the name.  The first radeon
+    # build put SDL_INC first and compiled gl_vidsdl.c against the installed
+    # Matrox declarations on top of the shim's -- 'conflicting types'.
+    ACCEL_INC="-I$RDN/test/mgashim -I$RDN/mesa -I$RDN/OSRDNDisplay/OSRDNDisplay_reloc.tproj"
+    OBJ=${OBJ}-radeon
+    BINSUFFIX=_radeon$BINSUFFIX
+else
+    ACCEL_INC="-I$MGA/mesa -I$MGA/hw3d -I$MGA/build/mesa/include"
+fi
 echo "build-glquake: SDL       $SDL_LIB"
-echo "build-glquake: accel GL  $MGA_LIB"
-echo "build-glquake: plain GL  $MGA_PLAIN"
+echo "build-glquake: accel GL  $MGA_LIB ($ACCEL)"
+echo "build-glquake: plain GL  ${MGA_PLAIN:-(none in this mode)}"
 
-CFLAGS="-m486 $OPT -DGLQUAKE -D__OPENSTEP__ -Dstricmp=strcasecmp -I$SRC \
- $SDL_INC -I$MGA/mesa -I$MGA/hw3d \
- -I$MGA/build/mesa/include"
+if [ "$ACCEL" = "radeon" ]; then
+    CFLAGS="-m486 $OPT -DGLQUAKE -D__OPENSTEP__ -Dstricmp=strcasecmp -I$SRC \
+ $ACCEL_INC $SDL_INC"
+else
+    CFLAGS="-m486 $OPT -DGLQUAKE -D__OPENSTEP__ -Dstricmp=strcasecmp -I$SRC \
+ $SDL_INC $ACCEL_INC"
+fi
 
 for need in "$SRC/glquake.h" "$SDL_LIB" "$MGA_LIB"; do
     if [ ! -r "$need" ]; then
@@ -147,7 +186,7 @@ csh -f /me/SDL20/src/port/openstep/fix-macho-i486-subtype.csh $OUT/bin/glquake$B
 # only in the accelerated one belongs to the card's path.  Every demo pair in
 # this workspace exists for the same reason.
 #
-if [ -r "$MGA_PLAIN" ]; then
+if [ -n "$MGA_PLAIN" ] && [ -r "$MGA_PLAIN" ]; then
     # OUTSIDE $OBJ on purpose: the list below is built from $OBJ/*.o, and an
     # object left in that directory is picked up again by the glob -- which
     # linked two copies of the video backend and every global in it twice.
