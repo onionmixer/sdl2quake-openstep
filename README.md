@@ -2,7 +2,7 @@
 
 Quake on OPENSTEP 4.2/Intel: the sdlquake engine on this workspace's own
 SDL2 port, running LibreQuake's free data -- as `squake`, the software
-renderer in an AppKit window, and as `glquake`, drawn end to end by a
+renderer in an AppKit window, and as `glquake_g450`, drawn end to end by a
 Matrox G450's WARP engine through an accelerated Mesa 3.4.2, mipmaps
 included.  The frame never crosses the bus.  From 1.3 the same engine also
 ships as `glquake_radeon`, drawn by an ATI Radeon 9250 through
@@ -40,7 +40,7 @@ docs/                the plans, and every measurement behind them
 ## The two packages
 
 * **sdl2quake** -- the engine binaries, statically linked: `squake`
-  (software renderer), `glquake` (hardware, needs the Matrox driver
+  (software renderer), `glquake_g450` (hardware, needs the Matrox driver
   active with Mesa acceleration on) and `glquake_radeon` (hardware, needs
   the Radeon 9250 driver active).
 * **sdl2quake-libre** -- LibreQuake's `id1/` data with its own credits,
@@ -51,9 +51,14 @@ Install both at the same place (default `/usr/local/quake`), then:
 ```
 cd /usr/local/quake
 ./squake            # any machine
-./glquake           # G450 + accel driver
+./glquake_g450      # G450 + accel driver
 ./glquake_radeon    # Radeon 9250 + its driver
 ```
+
+Each GL binary is built for one card and has that card's library linked in;
+nothing chooses between them at run time.  Up to 1.2 the Matrox binary was
+installed as `glquake`.  **Delete an older sdl2quake in Installer before
+installing 1.3**, or that `glquake` stays beside the new files.
 
 The mouse is grabbed while a level is up; **Shift+Ctrl+G** hands it back,
 and the title bar says so.
@@ -68,7 +73,7 @@ numbers assume its shape:
 | OS | OPENSTEP 4.2 (Intel), desktop at **1024x768, RGB:888/32, 60 Hz** |
 | Card | Matrox G450, 32 MB, primary head |
 | Driver | OSMGADisplay 1.3 with `VRAM Mmap` and `Mesa Acceleration` = Yes |
-| glquake | windowed **640x480** (the measured configuration); **1024x768** verified working |
+| glquake_g450 | windowed **640x480** (the measured configuration); **1024x768** verified working |
 | squake | windowed **640x480** |
 | Radeon | Radeon 9250 (PCI 1002:5960, 128 MB) with OSRDNDisplay 1.0; `glquake_radeon` windowed 640x480: `timedemo demo1` 40.5 fps |
 
@@ -94,7 +99,8 @@ too, so a development tree still works; the point of printing is that
 "what was installed" and "what the binary contains" can no longer differ
 without saying so.
 
-`glquake` links `libGL_mga.a` and gets the card; the same script also
+The build writes `glquake` (the package installs it as `glquake_g450`); it
+links `libGL_mga.a` and gets the card; the same script also
 links a `glquake_sw` control against stock Mesa, which draws the same
 picture the slow way and exists to be compared against.
 

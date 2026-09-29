@@ -67,9 +67,13 @@ rm -rf "$STAGEPARENT" "$OUT/$NAME.pkg"
 /bin/mkdirs "$STAGE/docs"
 
 cp "$BIN/squake"  "$STAGE/squake"
-cp "$BIN/glquake" "$STAGE/glquake"
+# 1.3: each GL binary is named for its card.  The build still writes
+# glquake (build/build-glquake.sh, the test scripts); only the installed name
+# changes, so nobody runs the Matrox build on a Radeon machine by its
+# generic name.
+cp "$BIN/glquake" "$STAGE/glquake_g450"
 cp "$BIN/glquake_radeon" "$STAGE/glquake_radeon"
-chmod 555 "$STAGE/squake" "$STAGE/glquake" "$STAGE/glquake_radeon"
+chmod 555 "$STAGE/squake" "$STAGE/glquake_g450" "$STAGE/glquake_radeon"
 cp "$SRC/README.md" "$STAGE/docs/README-sdl2quake.md"
 cp "$SRC/LICENSE"   "$STAGE/docs/COPYING-sdl2quake"
 
