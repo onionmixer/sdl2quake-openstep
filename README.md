@@ -4,7 +4,9 @@ Quake on OPENSTEP 4.2/Intel: the sdlquake engine on this workspace's own
 SDL2 port, running LibreQuake's free data -- as `squake`, the software
 renderer in an AppKit window, and as `glquake`, drawn end to end by a
 Matrox G450's WARP engine through an accelerated Mesa 3.4.2, mipmaps
-included.  The frame never crosses the bus.
+included.  The frame never crosses the bus.  From 1.3 the same engine also
+ships as `glquake_radeon`, drawn by an ATI Radeon 9250 through
+[openstep-radeon9250](https://github.com/onionmixer/openstep-radeon9250).
 
 ## Where everything comes from
 
@@ -16,6 +18,7 @@ This tree is a PORT.  The things it ports are their own projects:
 | Game data | [LibreQuake](https://github.com/lavenderdotpet/LibreQuake) -- free data, not in this repository; the `sdl2quake-libre` package carries it |
 | SDL2 | [onionmixer/openstep-sdl2](https://github.com/onionmixer/openstep-sdl2) -- SDL 2.32.10 for OPENSTEP (openstep.2 or later) |
 | Display driver + GL | [onionmixer/openstep-matrox-remade](https://github.com/onionmixer/openstep-matrox-remade) -- the G450 driver and `libGL_mga.a` (1.3 or later for mipmapping) |
+| Display driver + GL (Radeon) | [onionmixer/openstep-radeon9250](https://github.com/onionmixer/openstep-radeon9250) -- the Radeon 9250 driver and `libGL_radeon.a` (1.0) |
 | Mesa port | [onionmixer/openstep-mesa342](https://github.com/onionmixer/openstep-mesa342) -- Mesa 3.4.2 on OPENSTEP |
 
 Nothing in `upstream/` is edited.  The files in `port/openstep/` are copies
@@ -37,8 +40,9 @@ docs/                the plans, and every measurement behind them
 ## The two packages
 
 * **sdl2quake** -- the engine binaries, statically linked: `squake`
-  (software renderer) and `glquake` (hardware, needs the Matrox driver
-  active with Mesa acceleration on).
+  (software renderer), `glquake` (hardware, needs the Matrox driver
+  active with Mesa acceleration on) and `glquake_radeon` (hardware, needs
+  the Radeon 9250 driver active).
 * **sdl2quake-libre** -- LibreQuake's `id1/` data with its own credits,
   installed beside them.
 
@@ -48,6 +52,7 @@ Install both at the same place (default `/usr/local/quake`), then:
 cd /usr/local/quake
 ./squake            # any machine
 ./glquake           # G450 + accel driver
+./glquake_radeon    # Radeon 9250 + its driver
 ```
 
 The mouse is grabbed while a level is up; **Shift+Ctrl+G** hands it back,
@@ -65,6 +70,7 @@ numbers assume its shape:
 | Driver | OSMGADisplay 1.3 with `VRAM Mmap` and `Mesa Acceleration` = Yes |
 | glquake | windowed **640x480** (the measured configuration); **1024x768** verified working |
 | squake | windowed **640x480** |
+| Radeon | Radeon 9250 (PCI 1002:5960, 128 MB) with OSRDNDisplay 1.0; `glquake_radeon` windowed 640x480: `timedemo demo1` 40.5 fps |
 
 The desktop depth matters: the accelerated path draws into a 32bpp
 surface, and the driver's GL is qualified at RGB:888/32.  A 1600x1200
@@ -91,6 +97,19 @@ without saying so.
 `glquake` links `libGL_mga.a` and gets the card; the same script also
 links a `glquake_sw` control against stock Mesa, which draws the same
 picture the slow way and exists to be compared against.
+
+`glquake_radeon` is the same script with the Radeon library:
+
+```
+ACCEL=radeon RDN_LIB=/LocalDeveloper/Libraries/libGL_radeon.a \
+    sh /ndrv/openstep-quake/build/build-glquake.sh
+```
+
+It compiles the engine's unchanged sources against the Radeon project's
+`test/mgashim/` directory, which answers the Matrox header names the port
+includes with the Radeon library's own; so it needs that repository's source
+tree too (`RDN=`, default `/ndrv/openstep-radeon9250`).  No game file is
+changed for it.
 
 `glquake` still needs the driver's source tree for three headers --
 `OpenStepMGAMesaTexture.h`, `OpenStepMGAMesaTriangle.h` and

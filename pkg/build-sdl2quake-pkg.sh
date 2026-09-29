@@ -21,7 +21,7 @@ if [ "`/usr/bin/arch`" != i386 ]; then
     echo "build-sdl2quake-pkg: the payload is i386; package it on i386" >&2
     exit 1
 fi
-for f in "$BIN/squake" "$BIN/glquake" "$SRC/README.md" "$SRC/LICENSE" \
+for f in "$BIN/squake" "$BIN/glquake" "$BIN/glquake_radeon" "$SRC/README.md" "$SRC/LICENSE" \
          "$SRC/pkg/$NAME.info"; do
     if [ ! -r "$f" ]; then
         echo "build-sdl2quake-pkg: missing input: $f" >&2
@@ -39,6 +39,28 @@ if [ "$hooks" -lt 1 ]; then
     exit 1
 fi
 
+#
+# glquake_radeon (1.3): the same engine linked against libGL_radeon.a through
+# build/build-glquake.sh ACCEL=radeon.  Told apart the same way: the radeon
+# back end's own symbols are in it and the Matrox hook is not, and glquake is
+# the other way round -- so the two cannot be swapped by a misplaced copy.
+#
+n=`nm "$BIN/glquake_radeon" | grep OSRDNMesaHook | wc -l`
+if [ "$n" -lt 1 ]; then
+    echo "build-sdl2quake-pkg: $BIN/glquake_radeon carries no radeon back end" >&2
+    exit 1
+fi
+n=`nm "$BIN/glquake_radeon" | grep 'T _OSMGAMesaHook' | wc -l`
+if [ "$n" -gt 0 ]; then
+    echo "build-sdl2quake-pkg: $BIN/glquake_radeon defines the Matrox hook" >&2
+    exit 1
+fi
+n=`nm "$BIN/glquake" | grep 'T _OSRDNMesa' | wc -l`
+if [ "$n" -gt 0 ]; then
+    echo "build-sdl2quake-pkg: $BIN/glquake defines radeon symbols" >&2
+    exit 1
+fi
+
 STAGEPARENT=/tmp/_sdl2quakepkg
 STAGE="$STAGEPARENT/p"
 rm -rf "$STAGEPARENT" "$OUT/$NAME.pkg"
@@ -46,7 +68,8 @@ rm -rf "$STAGEPARENT" "$OUT/$NAME.pkg"
 
 cp "$BIN/squake"  "$STAGE/squake"
 cp "$BIN/glquake" "$STAGE/glquake"
-chmod 555 "$STAGE/squake" "$STAGE/glquake"
+cp "$BIN/glquake_radeon" "$STAGE/glquake_radeon"
+chmod 555 "$STAGE/squake" "$STAGE/glquake" "$STAGE/glquake_radeon"
 cp "$SRC/README.md" "$STAGE/docs/README-sdl2quake.md"
 cp "$SRC/LICENSE"   "$STAGE/docs/COPYING-sdl2quake"
 
