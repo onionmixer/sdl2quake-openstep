@@ -61,6 +61,26 @@ if [ "$n" -gt 0 ]; then
     exit 1
 fi
 
+#
+# 1.4: every binary must carry the SDL2 openstep.5 audio backend as released:
+# SoundKit calls on one NSThread, submissions not waited for.  Two earlier
+# builds of openstep.5 were each wrong in one of those -- the first made the
+# calls on SDL's cthread audio thread and glquake died in 3 runs of 30 ("sent
+# to freed object"); the second waited for every submission and the device
+# ran dry twice as often (openstep-sdl20 docs/PLAN_RELEASE_OPENSTEP5.md 13,
+# 15-19).  Only the released backend's close report says a submission time
+# is "the queueing only", so that phrase is what is looked for.  strings, not
+# grep: grep goes silent at the first NUL.  This does not tell a released
+# library from a hand-built one with the same source; the install check does.
+#
+for b in squake glquake glquake_radeon; do
+    n=`/bin/strings "$BIN/$b" | grep 'the queueing only' | wc -l`
+    if [ "$n" -lt 1 ]; then
+        echo "build-sdl2quake-pkg: $BIN/$b is not linked against the released SDL2 openstep.5 audio backend" >&2
+        exit 1
+    fi
+done
+
 STAGEPARENT=/tmp/_sdl2quakepkg
 STAGE="$STAGEPARENT/p"
 rm -rf "$STAGEPARENT" "$OUT/$NAME.pkg"

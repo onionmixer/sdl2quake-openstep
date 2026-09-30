@@ -16,9 +16,9 @@ This tree is a PORT.  The things it ports are their own projects:
 | --- | --- |
 | Engine | [mckayemu/sdlquake](https://github.com/mckayemu/sdlquake) -- id Software's Quake, GPL-2.0, as cloned into `upstream/sdlquake/`, unmodified |
 | Game data | [LibreQuake](https://github.com/lavenderdotpet/LibreQuake) -- free data, not in this repository; the `sdl2quake-libre` package carries it |
-| SDL2 | [onionmixer/openstep-sdl2](https://github.com/onionmixer/openstep-sdl2) -- SDL 2.32.10 for OPENSTEP (openstep.2 or later) |
+| SDL2 | [onionmixer/openstep-sdl2](https://github.com/onionmixer/openstep-sdl2) -- SDL 2.32.10 for OPENSTEP (openstep.2 or later to build; the 1.4 binaries are linked against openstep.5) |
 | Display driver + GL | [onionmixer/openstep-matrox-remade](https://github.com/onionmixer/openstep-matrox-remade) -- the G450 driver and `libGL_mga.a` (1.3 or later for mipmapping) |
-| Display driver + GL (Radeon) | [onionmixer/openstep-radeon9250](https://github.com/onionmixer/openstep-radeon9250) -- the Radeon 9250 driver and `libGL_radeon.a` (1.0) |
+| Display driver + GL (Radeon) | [onionmixer/openstep-radeon9250](https://github.com/onionmixer/openstep-radeon9250) -- the Radeon 9250 driver and `libGL_radeon.a` (driver 1.1 or later: with 1.0, `glquake_radeon` started first after a boot stays on its loading console) |
 | Mesa port | [onionmixer/openstep-mesa342](https://github.com/onionmixer/openstep-mesa342) -- Mesa 3.4.2 on OPENSTEP |
 
 Nothing in `upstream/` is edited.  The files in `port/openstep/` are copies
